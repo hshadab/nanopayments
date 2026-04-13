@@ -11,12 +11,16 @@ import "dotenv/config";
 import express from "express";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import { config } from "../config.js";
+import { createProofGuard } from "./proof-guard.js";
+import type { ProofVerifiedRequest } from "../types.js";
 
 const app = express();
 
 const gateway = createGatewayMiddleware({
   sellerAddress: config.sellerAddress,
 });
+
+const proofGuard = createProofGuard({ required: config.sellerRequireProof });
 
 // ── Legitimate data endpoints ──────────────────────────────────────────────
 
@@ -98,10 +102,116 @@ app.get(
   }
 );
 
+// ── Verified endpoints (proof-guard + x402 paywall) ───────────────────────
+
+app.get(
+  "/api/weather/verified",
+  proofGuard,
+  gateway.require("$0.001"),
+  (req: express.Request, res: express.Response) => {
+    const proof = (req as ProofVerifiedRequest).preflightProof;
+    res.json({
+      provider: "WeatherNode",
+      location: "New York, NY",
+      temperature_f: 72,
+      conditions: "Partly cloudy",
+      humidity: 45,
+      wind_mph: 8,
+      timestamp: new Date().toISOString(),
+      _verification: proof
+        ? {
+            proof_id: proof.proofId,
+            policy_hash: proof.policyHash,
+            verified: proof.valid,
+            verify_ms: proof.verifyMs,
+          }
+        : undefined,
+    });
+  }
+);
+
+app.get(
+  "/api/market/verified",
+  proofGuard,
+  gateway.require("$0.002"),
+  (req: express.Request, res: express.Response) => {
+    const proof = (req as ProofVerifiedRequest).preflightProof;
+    res.json({
+      provider: "MarketPulse",
+      symbol: "ETH/USD",
+      price: 3842.5,
+      change_24h: 2.3,
+      volume_24h: 18_500_000_000,
+      market_cap: 462_000_000_000,
+      timestamp: new Date().toISOString(),
+      _verification: proof
+        ? {
+            proof_id: proof.proofId,
+            policy_hash: proof.policyHash,
+            verified: proof.valid,
+            verify_ms: proof.verifyMs,
+          }
+        : undefined,
+    });
+  }
+);
+
+app.get(
+  "/api/risk/verified",
+  proofGuard,
+  gateway.require("$0.005"),
+  (req: express.Request, res: express.Response) => {
+    const proof = (req as ProofVerifiedRequest).preflightProof;
+    res.json({
+      provider: "RiskLens",
+      protocol: "Aave V3",
+      risk_score: 0.23,
+      tvl_usd: 12_400_000_000,
+      utilization: 0.67,
+      recommendation: "LOW_RISK",
+      timestamp: new Date().toISOString(),
+      _verification: proof
+        ? {
+            proof_id: proof.proofId,
+            policy_hash: proof.policyHash,
+            verified: proof.valid,
+            verify_ms: proof.verifyMs,
+          }
+        : undefined,
+    });
+  }
+);
+
+// ── Info endpoint ─────────────────────────────────────────────────────────
+
+app.get("/api/info", (_req, res) => {
+  res.json({
+    unprotected: [
+      { path: "/api/weather", price: "$0.001", proof_required: false },
+      { path: "/api/market", price: "$0.002", proof_required: false },
+      { path: "/api/risk", price: "$0.005", proof_required: false },
+      { path: "/api/analytics", price: "$0.003", proof_required: false },
+    ],
+    verified: [
+      { path: "/api/weather/verified", price: "$0.001", proof_required: true },
+      { path: "/api/market/verified", price: "$0.002", proof_required: true },
+      { path: "/api/risk/verified", price: "$0.005", proof_required: true },
+    ],
+    proof_header: "X-Preflight-Proof",
+    verification_endpoint: "POST https://api.icme.io/v1/verifyProof",
+  });
+});
+
 // ── Health check ───────────────────────────────────────────────────────────
 
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", endpoints: ["/api/weather", "/api/market", "/api/risk", "/api/analytics"] });
+  res.json({
+    status: "ok",
+    endpoints: {
+      unprotected: ["/api/weather", "/api/market", "/api/risk", "/api/analytics"],
+      verified: ["/api/weather/verified", "/api/market/verified", "/api/risk/verified"],
+    },
+  });
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
@@ -120,6 +230,13 @@ app.listen(config.sellerPort, () => {
   console.log("    GET /api/market     $0.002  Market prices");
   console.log("    GET /api/risk       $0.005  Risk scores");
   console.log("    GET /api/analytics  $0.003  Analytics (CONTAINS IDPI)");
+  console.log();
+  console.log("  Verified endpoints (proof-guard + x402):");
+  console.log("    GET /api/weather/verified  $0.001  + ZK proof required");
+  console.log("    GET /api/market/verified   $0.002  + ZK proof required");
+  console.log("    GET /api/risk/verified     $0.005  + ZK proof required");
+  console.log();
+  console.log(`  Proof guard: ${config.sellerRequireProof ? "REQUIRED" : "OPTIONAL"}`);
   console.log();
 });
 

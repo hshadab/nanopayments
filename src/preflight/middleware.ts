@@ -110,6 +110,15 @@ export class PreflightGate {
   }
 
   /**
+   * Verify a payment intent for the verified-pay flow where
+   * the proof_id will be attached to the x402 payment header.
+   * Same verification as verify() — explicitly named for clarity.
+   */
+  async verifyForPayment(intent: PaymentIntent): Promise<VerificationResult> {
+    return this.verify(intent);
+  }
+
+  /**
    * Verify a payment and execute the Nanopayment if allowed.
    * This is the main entry point for the agent.
    */
