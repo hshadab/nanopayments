@@ -69,11 +69,87 @@ body::after {
   box-shadow: 0 0 12px rgba(0,229,255,0.5);
 }
 
+/* ── Wallet Status Bar ─────────────────────────────────────────── */
+#wallet-bar {
+  position: fixed; top: 3px; left: 0; right: 0;
+  height: 36px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  z-index: 9998;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  opacity: 0;
+  transform: translateY(-36px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+#wallet-bar.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+#wallet-bar .wb-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  white-space: nowrap;
+}
+#wallet-bar .wb-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+#wallet-bar .wb-dot.green  { background: var(--green); box-shadow: 0 0 6px rgba(0,230,118,0.5); }
+#wallet-bar .wb-dot.cyan   { background: var(--cyan); }
+#wallet-bar .wb-dot.purple { background: var(--purple); }
+#wallet-bar .wb-dot.orange { background: var(--orange); }
+#wallet-bar .wb-dot.red    { background: var(--red); }
+#wallet-bar .wb-addr {
+  color: var(--text);
+  letter-spacing: 0.5px;
+}
+#wallet-bar .wb-val {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+#wallet-bar .wb-val.green { color: var(--green); }
+#wallet-bar .wb-val.red   { color: var(--red); }
+#wallet-bar .wb-val.cyan  { color: var(--cyan); }
+#wallet-bar .wb-chain {
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.6rem;
+  letter-spacing: 0.5px;
+}
+#wallet-bar .wb-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+/* Pulse animation for spend flash */
+@keyframes spendFlash {
+  0%   { color: var(--green); text-shadow: 0 0 8px rgba(0,230,118,0.6); }
+  100% { color: var(--text-bright); text-shadow: none; }
+}
+.wb-val.flash { animation: spendFlash 0.8s ease-out; }
+/* Blocked flash */
+@keyframes blockFlash {
+  0%   { background: rgba(255,23,68,0.15); }
+  100% { background: var(--bg-card); }
+}
+#wallet-bar.blocked { animation: blockFlash 1s ease-out; }
+
 /* ── Container ─────────────────────────────────────────────────── */
 .container {
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
+  padding-top: 2.5rem; /* space for fixed wallet bar */
 }
 
 /* ── Header ────────────────────────────────────────────────────── */
@@ -512,6 +588,17 @@ body::after {
 </head>
 <body>
 <div id="progress-bar"></div>
+<div id="wallet-bar">
+  <div class="wb-item"><span class="wb-dot green"></span><span class="wb-addr" id="wb-address">loading...</span></div>
+  <div class="wb-sep"></div>
+  <div class="wb-item">Balance: <span class="wb-val cyan" id="wb-balance">--</span> USDC</div>
+  <div class="wb-sep"></div>
+  <div class="wb-item">Spent: <span class="wb-val green" id="wb-spent">$0.000</span></div>
+  <div class="wb-sep"></div>
+  <div class="wb-item">Blocked: <span class="wb-val red" id="wb-blocked">$0.000</span></div>
+  <div class="wb-sep"></div>
+  <div class="wb-item"><span class="wb-chain">Arc Testnet</span></div>
+</div>
 
 <div class="container">
 
@@ -654,7 +741,7 @@ function setProgress(pct) {
 async function demoFetch(path, body) {
   const opts = body
     ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-    : { method: path.includes("proof-status") ? "GET" : "POST" };
+    : { method: (path.includes("proof-status") || path.includes("wallet-info")) ? "GET" : "POST" };
   const res = await fetch(path, opts);
   return res.json();
 }
@@ -755,6 +842,70 @@ function animateCounter(el, target, duration) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// Wallet Status Bar
+// ═══════════════════════════════════════════════════════════════════════
+
+const walletBar = {
+  totalSpent: 0,     // running USDC total spent this session
+  totalBlocked: 0,   // running USDC total blocked
+};
+
+function truncAddr(addr) {
+  if (!addr || addr.length < 12) return addr || "?";
+  return addr.slice(0, 6) + "..." + addr.slice(-4);
+}
+
+async function initWalletBar() {
+  try {
+    const info = await demoFetch("/demo/wallet-info");
+    if (!info.ok) return;
+    document.getElementById("wb-address").textContent = truncAddr(info.buyer);
+    document.getElementById("wb-balance").textContent = info.gateway.available;
+    document.getElementById("wallet-bar").classList.add("visible");
+  } catch { /* server not ready yet, bar stays hidden */ }
+}
+
+async function refreshBalance() {
+  try {
+    const info = await demoFetch("/demo/wallet-info");
+    if (info.ok) {
+      document.getElementById("wb-balance").textContent = info.gateway.available;
+    }
+  } catch { /* ignore */ }
+}
+
+function addSpent(usdc) {
+  walletBar.totalSpent += usdc;
+  const el = document.getElementById("wb-spent");
+  el.textContent = "$" + walletBar.totalSpent.toFixed(3);
+  // flash animation
+  el.classList.remove("flash");
+  void el.offsetWidth;
+  el.classList.add("flash");
+  // also refresh real balance from server
+  refreshBalance();
+}
+
+function addBlocked(usdc) {
+  walletBar.totalBlocked += usdc;
+  const el = document.getElementById("wb-blocked");
+  el.textContent = "$" + walletBar.totalBlocked.toFixed(3);
+  // flash the whole bar red briefly
+  const bar = document.getElementById("wallet-bar");
+  bar.classList.remove("blocked");
+  void bar.offsetWidth;
+  bar.classList.add("blocked");
+}
+
+function resetWalletBar() {
+  walletBar.totalSpent = 0;
+  walletBar.totalBlocked = 0;
+  document.getElementById("wb-spent").textContent = "$0.000";
+  document.getElementById("wb-blocked").textContent = "$0.000";
+  initWalletBar();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // Proof polling with live timer
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -818,6 +969,7 @@ async function runDemo() {
   clearRuleHighlights();
   resetArrows();
   setProgress(0);
+  resetWalletBar();
 
   // Animate architecture arrows
   await sleep(400);
@@ -863,6 +1015,7 @@ async function runDemo() {
 <span class="badge" style="background:rgba(255,145,0,0.12);color:var(--orange);border:1px solid rgba(255,145,0,0.3)">ACCEPTED</span> Payment went through &mdash; but was this payment <em>authorized</em>?
 <div class="callout orange">The TEE only checks cryptographic validity. A compromised agent with a valid key can sign anything. There is no policy enforcement.</div>`));
     stats.unprotected++;
+    addSpent(0.001);
   } else {
     appendStep(s1, makeStepCard("warning", "Error",
       `<div class="json-block">${syntaxHighlight({ error: scene1Data.error })}</div>`));
@@ -952,6 +1105,7 @@ async function runDemo() {
           `<div class="json-block">${syntaxHighlight(scene2Pay.data)}</div>
 <span class="badge verified">VERIFIED</span> Proof consumed. Payment: ${scene2Pay.amount || "0.001"} USDC. Data served.`));
         stats.verified++;
+        addSpent(0.001);
       } else {
         appendStep(s2, makeStepCard("warning", "Payment Error",
           `<div class="json-block">${syntaxHighlight({ error: scene2Pay.error })}</div>`));
@@ -1027,7 +1181,10 @@ async function runDemo() {
     if (scene3Data.proof_id) {
       collectedProofs.push({ label: "Scene 3 \u2014 Malicious transfer (UNSAT)", proofId: scene3Data.proof_id });
     }
-    if (isUnsat) stats.blocked++;
+    if (isUnsat) {
+      stats.blocked++;
+      addBlocked(0.5);
+    }
     await sleep(STEP_DELAY);
 
     // Show violated rules detail
@@ -1151,7 +1308,7 @@ function replayDemo() { runDemo(); }
 // Init
 // ═══════════════════════════════════════════════════════════════════════
 
-document.addEventListener("DOMContentLoaded", () => { runDemo(); });
+document.addEventListener("DOMContentLoaded", () => { initWalletBar(); runDemo(); });
 </script>
 </body>
 </html>

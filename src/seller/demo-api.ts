@@ -7,7 +7,7 @@
 import { Router, type Request, type Response } from "express";
 import { PreflightClient } from "../preflight/client.js";
 import { describePaymentAction } from "../preflight/policy.js";
-import { payForResource } from "../gateway/client.js";
+import { getGatewayClient, payForResource } from "../gateway/client.js";
 import { verifiedPay } from "../gateway/verified-client.js";
 import { config } from "../config.js";
 
@@ -177,5 +177,35 @@ demoRouter.post("/demo/scene4/verify", async (req: Request, res: Response) => {
         error: msg,
       });
     }
+  }
+});
+
+// ── Wallet info (address + balance) ──────────────────────────────────────
+
+demoRouter.get("/demo/wallet-info", async (_req: Request, res: Response) => {
+  try {
+    const client = getGatewayClient();
+    const address = client.address;
+    const balances = await client.getBalances();
+
+    res.json({
+      ok: true,
+      buyer: address,
+      seller: config.sellerAddress,
+      chain: "Arc Testnet",
+      chainId: "eip155:5042002",
+      gateway: {
+        available: balances.gateway.formattedAvailable,
+        total: balances.gateway.formattedTotal,
+      },
+      wallet: {
+        balance: balances.wallet.formatted,
+      },
+    });
+  } catch (err) {
+    res.status(502).json({
+      ok: false,
+      error: (err as Error).message,
+    });
   }
 });
