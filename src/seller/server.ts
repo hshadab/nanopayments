@@ -9,12 +9,23 @@
  */
 import "dotenv/config";
 import express from "express";
+import path from "node:path";
 import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import { config } from "../config.js";
 import { createProofGuard } from "./proof-guard.js";
+import { demoRouter } from "./demo-api.js";
 import type { ProofVerifiedRequest } from "../types.js";
 
 const app = express();
+
+// Parse JSON bodies (needed by demo-api endpoints)
+app.use(express.json());
+
+// Demo API router (proxies Preflight + x402 for the frontend)
+app.use(demoRouter);
+
+// Serve frontend static files
+app.use(express.static(path.resolve(import.meta.dirname, "../../frontend")));
 
 const gateway = createGatewayMiddleware({
   sellerAddress: config.sellerAddress,
@@ -237,6 +248,9 @@ app.listen(config.sellerPort, () => {
   console.log("    GET /api/risk/verified     $0.005  + ZK proof required");
   console.log();
   console.log(`  Proof guard: ${config.sellerRequireProof ? "REQUIRED" : "OPTIONAL"}`);
+  console.log();
+  console.log("  Frontend demo:");
+  console.log(`    http://localhost:${config.sellerPort}/`);
   console.log();
 });
 
