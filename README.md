@@ -1,6 +1,8 @@
 # Verified Nanopayments
 
-**Preflight ZK proofs on Base gating Circle Nanopayments on Arc**
+> **Built with [Preflight](https://docs.icme.io)** — formal verification and ZK proofs for autonomous agent spending decisions.
+
+**Spending authorization for Circle Nanopayments**
 
 ICME Labs x Circle
 
@@ -47,30 +49,38 @@ Now imagine a prompt injection tells the agent to send 0.5 USDC to an attacker w
 | `GET /v1/proof/{id}` | Get proof status (authenticated). | Free |
 | `POST /v1/makeRules` | Compile a natural language policy into SMT-LIB2. One-time. | 300 credits ($3.00) |
 
-**checkIt response shape:**
+Both `makeRules` and `checkIt` return **SSE streams**, not plain JSON. Each line is `data: {...}\n\n`. The final event has `"step":"done"` and contains the result. See the gotchas section below.
+
+**checkIt final SSE event:**
 ```json
 {
-  "check_id": "uuid",
+  "step": "done",
   "result": "SAT",
-  "blocked": false,
-  "reason": "All policy constraints satisfied",
-  "proof": "zk-proof-receipt-string",
-  "proof_id": "uuid"
+  "z3_result": "SAT",
+  "ar_result": "SAT",
+  "llm_result": "SAT",
+  "check_id": "uuid",
+  "zk_proof_id": "uuid",
+  "detail": "Satisfiable",
+  "verification_time_ms": 6000,
+  "extracted": { "transferAmount": 0.001, "urgencyTacticDetected": false, "..." : "..." }
 }
 ```
 
-**verifyProof response shape:**
+**verifyProof response (plain JSON):**
 ```json
 {
   "valid": true,
+  "result": "SAT",
   "policy_hash": "hex-string",
-  "claimed_result": "SAT",
-  "verify_ms": 42,
-  "used": true
+  "verify_ms": 400,
+  "used": true,
+  "proof_bytes_len": 93418,
+  "trace_length": 1048576
 }
 ```
 
-New accounts get 325 free credits (enough for 1 policy compile + 25 checks). Top-ups start at $5 for 500 credits.
+New accounts get 500 credits ($5 USDC on Base). Top-ups are $5 for 500 credits.
 
 ## Architecture
 
@@ -103,28 +113,130 @@ Agent decides to pay
 +---------------------------+
 ```
 
-## Setup
+## Setup (step by step)
+
+### What you need before starting
+
+- Node.js v20+
+- An EVM private key with at least 10 USDC on **Base mainnet** (for ICME account + credits)
+- Access to https://faucet.circle.com/ for free Arc Testnet USDC
+
+You will spend real USDC on Base mainnet: 5 USDC for account creation, 5 USDC for a credit top-up, and 300 credits ($3) for policy compilation. After that, each check costs 1 credit ($0.01).
+
+### Step 1. Install dependencies
 
 ```bash
 npm install
+```
 
+### Step 2. Create your .env file
+
+```bash
 cp .env.example .env
-# Fill in:
-#   PRIVATE_KEY        — EVM wallet (fund with testnet USDC from Circle faucet)
-#   SELLER_ADDRESS     — your wallet address
-#   ICME_API_KEY       — from docs.icme.io
-#   ICME_POLICY_ID     — from policy compilation step below
-#   OPENAI_API_KEY     — only needed for legacy demo (npm run demo:legacy)
+```
 
-# Compile the payment policy (one-time, ~3-7 min, $3.00)
+Open `.env` and add your private key:
+
+```
+PRIVATE_KEY=0x_your_private_key_here
+```
+
+Leave everything else alone for now. The scripts below will give you the values to fill in.
+
+### Step 3. Create an ICME Preflight account
+
+This pays 5 USDC on Base mainnet and gives you an API key + 500 credits.
+
+```bash
+npx tsx scripts/create-icme-account.ts
+```
+
+Copy the API key it prints into your `.env`:
+
+```
+ICME_API_KEY=sk-smt-your-key-here
+```
+
+### Step 4. Top up credits
+
+You need 300 credits to compile the policy. Account creation gave you 500, but if you've used some or want a buffer:
+
+```bash
+npx tsx scripts/topup-icme.ts
+```
+
+This pays 5 USDC on Base for 500 more credits.
+
+### Step 5. Generate a seller address
+
+The buyer and seller **cannot be the same wallet**. Circle Gateway rejects self-transfers. Generate a fresh address:
+
+```bash
+npx tsx -e "
+import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
+const pk = generatePrivateKey();
+console.log('SELLER_ADDRESS=' + privateKeyToAccount(pk).address);
+"
+```
+
+Paste the output into your `.env`. This address does not need funds.
+
+### Step 6. Compile the payment policy
+
+This converts the 9 natural language rules into formal SMT-LIB2 logic. Costs 300 credits. Takes 3-7 minutes.
+
+```bash
 npm run policy:create
-# Copy the output ICME_POLICY_ID to your .env
+```
 
-# Start the seller server (terminal 1)
+It prints a policy ID when done. Copy it into your `.env`:
+
+```
+ICME_POLICY_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+You only do this once. The policy ID is permanent.
+
+### Step 7. Get Arc Testnet USDC
+
+Go to https://faucet.circle.com/ and:
+
+1. Select **Arc Testnet** from the network dropdown
+2. Paste the wallet address derived from your `PRIVATE_KEY`
+3. Complete the captcha and submit
+
+You get 10-20 USDC. The demo needs about 1 USDC.
+
+### Step 8. Run the demo
+
+Open two terminals.
+
+**Terminal 1** -- start the seller:
+
+```bash
 npm run seller
+```
 
-# Run the verified demo (terminal 2)
+You should see it listening on port 3100 with a list of endpoints.
+
+**Terminal 2** -- run the demo:
+
+```bash
 npm run demo
+```
+
+The demo runs 4 scenes and takes about 2 minutes total. Most of the wait is ZK proof generation (~30-60 seconds per proof).
+
+### Your .env when everything is set up
+
+```
+PRIVATE_KEY=0x...
+ICME_API_KEY=sk-smt-...
+ICME_POLICY_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+SELLER_ADDRESS=0x...  (different from your wallet)
+SELLER_PORT=3100
+SELLER_REQUIRE_PROOF=true
+DEMO_MODE=verified
 ```
 
 ## Scripts
@@ -165,6 +277,10 @@ src/
 │   └── dashboard.ts         # Terminal UI for legacy demo
 ├── types.ts                 # Shared types (PreflightProofHeader, ProofVerifiedRequest)
 └── config.ts                # Environment-based configuration
+
+scripts/
+├── create-icme-account.ts   # Pay 5 USDC on Base to create ICME account
+└── topup-icme.ts            # Pay 5 USDC on Base for 500 more credits
 ```
 
 ## How the proof header works
@@ -187,6 +303,33 @@ Every competitor offers spending *controls* (if-statements). Preflight offers sp
 | **Verifiability** | Trust the middleware ran | Anyone can verify the proof independently |
 | **Privacy** | Auditor sees the policy | Auditor verifies without seeing the policy |
 | **Auditability** | Log files | Cryptographic receipts (EU AI Act ready) |
+
+## Gotchas
+
+Things we hit while getting this running end-to-end:
+
+- **The ICME API streams SSE, not JSON.** Both `/v1/makeRules` and `/v1/checkIt` return `text/event-stream` responses. You cannot call `res.json()` on them. Parse each `data: {...}` line and look for the event where `step === "done"`. Progress events have `step: "1/6"`, `"2/6"`, etc.
+
+- **ZK proofs take 30-60 seconds to generate.** The `checkIt` response gives you a `zk_proof_id` immediately, but the proof itself is not ready yet. You must poll `GET /v1/proof/:id` until it returns 200. Proof generation (`prove_ms`) is typically 30-35 seconds, plus queue time.
+
+- **Proofs are single-use.** Once you call `POST /v1/verifyProof`, the proof is consumed and cannot be verified again. A second call returns 409 `"proof used"`. The seller's proof-guard consumes the proof during payment, so you cannot re-verify it in Scene 4.
+
+- **Buyer and seller cannot be the same address.** Circle Gateway rejects self-transfers with `reason: "self_transfer"`. Use a separate generated address for `SELLER_ADDRESS`.
+
+- **The checkIt result field can be "AR uncertain".** When the AR solver cannot translate the action but Z3 says SAT, the overall result is `"AR uncertain"` instead of `"SAT"` or `"UNSAT"`. Fall back to the `z3_result` field for the SAT/UNSAT determination.
+
+- **Policy compilation costs credits even if it fails.** If the SSE stream drops or the parser misses the policy ID, you still lose 300 credits. Make sure your SSE parser handles the `step: "done"` event properly before running `policy:create`.
+
+## Costs
+
+| Item | Cost | When |
+|---|---|---|
+| ICME account creation | 5 USDC on Base mainnet | Once |
+| Credit top-up | 5 USDC per 500 credits | As needed |
+| Policy compilation | 300 credits ($3) | Once |
+| Policy check (checkIt) | 1 credit ($0.01) | Per check |
+| Arc Testnet USDC | Free via faucet | As needed |
+| x402 Nanopayments | $0.001 - $0.005 per API call | Per API call |
 
 ---
 

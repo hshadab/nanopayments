@@ -1,6 +1,6 @@
 # ICME Preflight API — Integration Feedback
 
-**From:** ICME Labs (Verified Nanopayments demo, LabLab x Arc hackathon)
+**From:** ICME Labs (Verified Nanopayments demo)
 **Date:** April 2026
 **Integration:** Preflight ZK proofs gating Circle x402 Nanopayments
 

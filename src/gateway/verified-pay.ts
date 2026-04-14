@@ -74,17 +74,24 @@ export async function verifyAndPay(
     };
   }
 
-  // SAT — execute payment with proof attached
+  // SAT — wait for ZK proof generation, then execute payment with proof attached
   const paymentStart = Date.now();
 
-  // Get proof status to retrieve policy_hash for the header
+  // Wait for proof to be generated (takes ~30-60s)
   let policyHash: string | undefined;
   if (check.proof_id) {
     try {
-      const proofStatus = await client.getProofStatus(check.proof_id);
+      const proofStatus = await client.waitForProof(check.proof_id, {
+        timeoutMs: 120_000,
+        intervalMs: 5_000,
+        onWaiting: (elapsed) => {
+          process.stdout.write(`\r  Waiting for ZK proof generation... ${Math.round(elapsed / 1000)}s`);
+        },
+      });
+      process.stdout.write("\n");
       policyHash = proofStatus.policy_hash;
     } catch {
-      // Non-critical — proceed without policy_hash in header
+      console.log("  Warning: Proof not ready, proceeding without policy_hash");
     }
   }
 

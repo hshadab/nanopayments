@@ -2,7 +2,7 @@
 
 ## Project context
 
-ICME Labs demo for Circle, targeting the LabLab × Arc Nanopayments hackathon (April 20–26, 2026). Shows Preflight ZK proofs (on Base) gating Circle Nanopayments (on Arc) — a cross-chain trust bridge.
+ICME Labs demo for Circle. Shows Preflight ZK proofs (on Base) gating Circle Nanopayments (on Arc) — a cross-chain trust bridge.
 
 ## Architecture
 
@@ -48,18 +48,12 @@ npm run demo
 
 ## Current status
 
-- All source files written and TypeScript compiles clean
-- Dependencies installed (`npm install` works)
-- NOT yet tested end-to-end (needs API keys in .env)
-
-## What's needed next
-
-1. Get API keys (ICME, OpenAI, Circle testnet wallet)
-2. Test seller server standalone (`npm run seller` + `curl -i localhost:3100/api/weather` → expect 402)
-3. Compile the Preflight policy (`npm run policy:create`)
-4. Test full demo flow (`npm run demo`)
-5. Fix any runtime issues
-6. Polish for hackathon submission
+- Fully tested end-to-end, all 4 demo scenes working
+- ICME account created, policy compiled (`fe91f282-246f-478b-b539-1873c3ad85bd`)
+- Arc Testnet wallet funded via Circle faucet
+- SSE parser fixed for both `makeRules` and `checkIt` endpoints
+- Proof polling added (proofs take ~30-60s to generate)
+- Separate seller address configured (Gateway rejects self-transfers)
 
 ## File structure
 

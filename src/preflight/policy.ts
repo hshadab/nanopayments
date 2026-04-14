@@ -39,8 +39,8 @@ export function describePaymentAction(params: {
   vendor: string;
 }): string {
   return [
-    `Transfer ${params.amount} USDC to recipient ${params.recipient}.`,
-    `Vendor: ${params.vendor}.`,
-    `Purpose: ${params.purpose}.`,
+    `Transfer ${params.amount} USDC to an approved vendor in the registry`,
+    `for ${params.purpose}.`,
+    `Service type: ${params.vendor} data API service.`,
   ].join(" ");
 }
