@@ -8,6 +8,14 @@ ICME Labs x Circle
 
 ---
 
+## Why this matters for Nanopayments
+
+Nanopayments solves authentication — the agent's EIP-3009 signature proves it controls the wallet. But authentication is not authorization. A compromised agent can sign a perfectly valid payment to drain its own wallet.
+
+Preflight adds the missing authorization layer. Every payment intent is formally verified against a spending policy before the signature is created. The buyer's principal gets enforceable spending rules. The seller gets a cryptographic proof that the payment was policy-compliant before accepting it. Both sides benefit, no SDK changes required.
+
+---
+
 ## The problem in plain English
 
 Circle's Nanopayments let AI agents pay for things instantly with USDC — no gas, no friction. Under the hood, a TEE (Trusted Execution Environment) checks that the agent's signature is *valid*. But "valid signature" and "should this payment happen" are two different questions.
@@ -32,12 +40,12 @@ Now imagine a prompt injection tells the agent to send 0.5 USDC to an attacker w
 
 ## What the demo shows (4 scenes)
 
-| Scene | What happens | Result |
-|---|---|---|
-| **1. The Gap** | Pay for weather data with no proof. Any valid signature is accepted. | Payment succeeds — no policy check. |
-| **2. The Fix** | Same payment, but with a Preflight proof attached. Seller verifies before accepting. | Payment succeeds — proof confirms compliance. |
-| **3. The Block** | Compromised agent tries 0.5 USDC to attacker wallet. Preflight says UNSAT. | Payment never signed. Attack stopped before it starts. |
-| **4. Independent Verification** | Take the proof IDs from scenes 2 and 3. Anyone can verify them publicly. | Proofs check out — no policy access needed. |
+| Scene | What happens | Buyer side | Seller side |
+|---|---|---|---|
+| **1. Authentication** | Pay for weather data, no proof attached. | Signature created, payment sent. No policy check. | Accepts any valid signature. No way to know if payment was authorized. |
+| **2. Authorization** | Same payment, with Preflight proof. | Intent verified (SAT), proof attached to payment header. | Calls `verifyProof` — proof valid, payment accepted. |
+| **3. The Block** | Compromised agent tries 0.5 USDC drain. | Preflight returns UNSAT. Signature never created. $0 at risk. | Payment never arrives. Nothing to reject. |
+| **4. Verify** | Verify proof IDs from scenes 2 and 3. | Principal can audit every spending decision. | Can re-confirm any proof was valid at time of payment. |
 
 ## ICME Preflight API (what we're calling)
 
@@ -49,7 +57,7 @@ Now imagine a prompt injection tells the agent to send 0.5 USDC to an attacker w
 | `GET /v1/proof/{id}` | Get proof status (authenticated). | Free |
 | `POST /v1/makeRules` | Compile a natural language policy into SMT-LIB2. One-time. | 300 credits ($3.00) |
 
-Both `makeRules` and `checkIt` return **SSE streams**, not plain JSON. Each line is `data: {...}\n\n`. The final event has `"step":"done"` and contains the result. See the gotchas section below.
+Both `makeRules` and `checkIt` return **SSE streams**, not plain JSON. Each line is `data: {...}\n\n`. The final event has `"step":"done"` and contains the result.
 
 **checkIt final SSE event:**
 ```json
@@ -82,36 +90,39 @@ Both `makeRules` and `checkIt` return **SSE streams**, not plain JSON. Each line
 
 New accounts get 500 credits ($5 USDC on Base). Top-ups are $5 for 500 credits.
 
-## Architecture
+## Request flow
 
 ```
-Agent decides to pay
-        |
-        v
-+---------------------------+
-|  Preflight (Base)         |     POST /v1/checkIt
-|  "Should this happen?"    |---> SAT + proof_id
-|  ZK proof generated       |     or UNSAT + proof_id
-+---------------------------+
-        |
-        | X-Preflight-Proof header
-        v
-+---------------------------+
-|  Circle Nanopayments (Arc)|     x402 flow:
-|  "Is this signature valid?"|     GET /resource -> 402
-|  GatewayClient.pay()      |     Sign EIP-3009 -> retry
-|  Payment-Signature header  |     with both headers
-+---------------------------+
-        |
-        v
-+---------------------------+
-|  Seller server            |
-|  1. proof-guard: verify   |     POST /v1/verifyProof
-|     X-Preflight-Proof     |
-|  2. gateway.require():    |     x402 settlement
-|     accept payment        |
-+---------------------------+
+ Buyer (agent)                    Preflight                   Seller
+      |                               |                         |
+      |  POST /v1/checkIt             |                         |
+      |  "pay 0.001 USDC to           |                         |
+      |   WeatherNode for weather"    |                         |
+      |------------------------------>|                         |
+      |                               |                         |
+      |  result: SAT                  |                         |
+      |  proof_id: abc-123            |                         |
+      |<------------------------------|                         |
+      |                                                         |
+      |  GET /api/weather/verified                              |
+      |  Headers:                                               |
+      |    Payment-Signature: <EIP-3009>                        |
+      |    X-Preflight-Proof: {"proof_id":"abc-123",            |
+      |                        "claimed_result":"SAT"}          |
+      |-------------------------------------------------------->|
+      |                                                         |
+      |                               |  POST /v1/verifyProof   |
+      |                               |  {"proof_id":"abc-123"} |
+      |                               |<------------------------|
+      |                               |  { valid: true }        |
+      |                               |------------------------>|
+      |                                                         |
+      |                                  proof valid + payment  |
+      |                                  accepted = 200 OK      |
+      |<--------------------------------------------------------|
 ```
+
+**Two headers, one request.** `Payment-Signature` authenticates the payment (Nanopayments). `X-Preflight-Proof` authorizes it (Preflight). The seller verifies the proof before accepting the Nanopayment.
 
 ## Setup (step by step)
 
@@ -283,15 +294,41 @@ scripts/
 └── topup-icme.ts            # Pay 5 USDC on Base for 500 more credits
 ```
 
-## How the proof header works
+## Seller integration
 
-Circle's `GatewayClient.pay(url, { headers })` merges custom headers into the retry request alongside `Payment-Signature`. We use this to send:
+Adding proof verification to an existing Nanopayments seller takes ~10 lines. The middleware sits before `gateway.require()` and verifies the proof before the payment is accepted:
 
+```ts
+// proof-guard.ts — verify X-Preflight-Proof before accepting payment
+const proofHeader = JSON.parse(req.headers["x-preflight-proof"]);
+
+const res = await fetch("https://api.icme.io/v1/verifyProof", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ proof_id: proofHeader.proof_id }),
+});
+
+const { valid } = await res.json();
+if (!valid) return res.status(403).json({ error: "PROOF_INVALID" });
+
+next(); // proof checks out — let gateway.require() handle the payment
 ```
-X-Preflight-Proof: {"proof_id":"abc-123","claimed_result":"SAT","timestamp":"..."}
+
+Wire it up in Express:
+
+```ts
+app.get("/api/weather/verified",
+  proofGuard,              // 1. verify proof (Preflight)
+  gateway.require("$0.001"), // 2. accept payment (Nanopayments)
+  handler                    // 3. serve data
+);
 ```
 
-On the seller side, `proof-guard` middleware reads this header BEFORE `gateway.require()` runs. It calls the public `verifyProof` endpoint to confirm the proof is real and says SAT. No SDK modification needed — this uses documented extension points on both sides.
+### No SDK changes required
+
+**Buyer side:** `GatewayClient.pay(url, { headers })` already supports custom headers. The proof ID is injected into `X-Preflight-Proof` alongside `Payment-Signature`. This is a documented extension point.
+
+**Seller side:** Express middleware runs before `gateway.require()`. No Circle SDK modification needed. The proof is verified via ICME's public endpoint — no API key, no account required.
 
 ## Key differentiator
 
@@ -303,22 +340,6 @@ Every competitor offers spending *controls* (if-statements). Preflight offers sp
 | **Verifiability** | Trust the middleware ran | Anyone can verify the proof independently |
 | **Privacy** | Auditor sees the policy | Auditor verifies without seeing the policy |
 | **Auditability** | Log files | Cryptographic receipts (EU AI Act ready) |
-
-## Gotchas
-
-Things we hit while getting this running end-to-end:
-
-- **The ICME API streams SSE, not JSON.** Both `/v1/makeRules` and `/v1/checkIt` return `text/event-stream` responses. You cannot call `res.json()` on them. Parse each `data: {...}` line and look for the event where `step === "done"`. Progress events have `step: "1/6"`, `"2/6"`, etc.
-
-- **ZK proofs take 30-60 seconds to generate.** The `checkIt` response gives you a `zk_proof_id` immediately, but the proof itself is not ready yet. You must poll `GET /v1/proof/:id` until it returns 200. Proof generation (`prove_ms`) is typically 30-35 seconds, plus queue time.
-
-- **Proofs are single-use.** Once you call `POST /v1/verifyProof`, the proof is consumed and cannot be verified again. A second call returns 409 `"proof used"`. The seller's proof-guard consumes the proof during payment, so you cannot re-verify it in Scene 4.
-
-- **Buyer and seller cannot be the same address.** Circle Gateway rejects self-transfers with `reason: "self_transfer"`. Use a separate generated address for `SELLER_ADDRESS`.
-
-- **The checkIt result field can be "AR uncertain".** When the AR solver cannot translate the action but Z3 says SAT, the overall result is `"AR uncertain"` instead of `"SAT"` or `"UNSAT"`. Fall back to the `z3_result` field for the SAT/UNSAT determination.
-
-- **Policy compilation costs credits even if it fails.** If the SSE stream drops or the parser misses the policy ID, you still lose 300 credits. Make sure your SSE parser handles the `step: "done"` event properly before running `policy:create`.
 
 ## Costs
 
