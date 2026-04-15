@@ -727,47 +727,16 @@ body::after {
 
 </div>
 
+<script src="demo-shared.js"></script>
 <script>
-// ═══════════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════════
+const { sleep, setProgress, demoFetch, highlightJson, animateCounter,
+        createWalletTracker, highlightRules: _hlRules,
+        clearRuleHighlights: _clrRules, parseViolatedRules, truncAddr } = DemoShared;
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-function setProgress(pct) {
-  document.getElementById("progress-bar").style.width = pct + "%";
-}
-
-async function demoFetch(path, body) {
-  const opts = body
-    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-    : { method: (path.includes("proof-status") || path.includes("wallet-info")) ? "GET" : "POST" };
-  const res = await fetch(path, opts);
-  return res.json();
-}
-
-/** Syntax-highlight a JS value as coloured HTML (like a JSON viewer). */
-function syntaxHighlight(obj) {
-  const json = JSON.stringify(obj, null, 2);
-  return json.replace(
-    /("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g,
-    function (match) {
-      let cls = "json-num";
-      if (/^"/.test(match)) {
-        cls = /:$/.test(match) ? "json-key" : "json-str";
-      } else if (/true|false/.test(match)) {
-        cls = "json-bool";
-      } else if (/null/.test(match)) {
-        cls = "json-null";
-      }
-      return '<span class="' + cls + '">' + match + '</span>';
-    }
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Rendering Helpers
-// ═══════════════════════════════════════════════════════════════════════
+const JSON_CLASSES = { key: "json-key", str: "json-str", num: "json-num", bool: "json-bool", nul: "json-null" };
+function syntaxHighlight(obj) { return highlightJson(obj, JSON_CLASSES); }
+function highlightRules(rules, mode) { _hlRules(rules, "active-" + mode, ".rule-item", "rule-item"); }
+function clearRuleHighlights() { _clrRules(".rule-item", "rule-item"); }
 
 function makeStepCard(type, label, html) {
   const div = document.createElement("div");
@@ -792,29 +761,9 @@ function makeSceneShell(id, title, desc) {
 
 function appendStep(sceneEl, card) {
   sceneEl.querySelector(".steps-container").appendChild(card);
-  // trigger reflow then animate
   void card.offsetWidth;
   card.classList.add("visible");
 }
-
-// ═══════════════════════════════════════════════════════════════════════
-// Rule highlighting
-// ═══════════════════════════════════════════════════════════════════════
-
-function highlightRules(rules, mode) {
-  rules.forEach(rn => {
-    const el = document.querySelector(`.rule-item[data-rule="${rn}"]`);
-    if (el) el.className = `rule-item active-${mode}`;
-  });
-}
-
-function clearRuleHighlights() {
-  document.querySelectorAll(".rule-item").forEach(el => { el.className = "rule-item"; });
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Architecture arrows
-// ═══════════════════════════════════════════════════════════════════════
 
 function animateArrow(i) {
   const p = document.getElementById(`arrow${i}`);
@@ -831,83 +780,19 @@ function resetArrows() {
   }
 }
 
-function animateCounter(el, target, duration) {
-  const startTime = performance.now();
-  function tick(now) {
-    const progress = Math.min((now - startTime) / duration, 1);
-    el.textContent = Math.round(target * progress);
-    if (progress < 1) requestAnimationFrame(tick);
-  }
-  requestAnimationFrame(tick);
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Wallet Status Bar
-// ═══════════════════════════════════════════════════════════════════════
-
-const walletBar = {
-  totalSpent: 0,     // running USDC total spent this session
-  totalBlocked: 0,   // running USDC total blocked
-};
-
-function truncAddr(addr) {
-  if (!addr || addr.length < 12) return addr || "?";
-  return addr.slice(0, 6) + "..." + addr.slice(-4);
-}
-
-async function initWalletBar() {
-  try {
-    const info = await demoFetch("/demo/wallet-info");
-    if (!info.ok) return;
+const wallet = createWalletTracker({
+  balanceId: "wb-balance",
+  spentId: "wb-spent",
+  blockedId: "wb-blocked",
+  flashTargetId: "wallet-bar",
+  onInit(info) {
     document.getElementById("wb-address").textContent = truncAddr(info.buyer);
-    document.getElementById("wb-balance").textContent = info.gateway.available;
     document.getElementById("wallet-bar").classList.add("visible");
-  } catch { /* server not ready yet, bar stays hidden */ }
-}
+  },
+});
 
-async function refreshBalance() {
-  try {
-    const info = await demoFetch("/demo/wallet-info");
-    if (info.ok) {
-      document.getElementById("wb-balance").textContent = info.gateway.available;
-    }
-  } catch { /* ignore */ }
-}
-
-function addSpent(usdc) {
-  walletBar.totalSpent += usdc;
-  const el = document.getElementById("wb-spent");
-  el.textContent = "$" + walletBar.totalSpent.toFixed(3);
-  // flash animation
-  el.classList.remove("flash");
-  void el.offsetWidth;
-  el.classList.add("flash");
-  // also refresh real balance from server
-  refreshBalance();
-}
-
-function addBlocked(usdc) {
-  walletBar.totalBlocked += usdc;
-  const el = document.getElementById("wb-blocked");
-  el.textContent = "$" + walletBar.totalBlocked.toFixed(3);
-  // flash the whole bar red briefly
-  const bar = document.getElementById("wallet-bar");
-  bar.classList.remove("blocked");
-  void bar.offsetWidth;
-  bar.classList.add("blocked");
-}
-
-function resetWalletBar() {
-  walletBar.totalSpent = 0;
-  walletBar.totalBlocked = 0;
-  document.getElementById("wb-spent").textContent = "$0.000";
-  document.getElementById("wb-blocked").textContent = "$0.000";
-  initWalletBar();
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// Proof polling with live timer
-// ═══════════════════════════════════════════════════════════════════════
+function addSpent(usdc) { wallet.addSpent(usdc); }
+function addBlocked(usdc) { wallet.addBlocked(usdc); }
 
 async function waitForProof(proofId, stepCard) {
   const contentEl = stepCard.querySelector(".step-content");
@@ -915,21 +800,16 @@ async function waitForProof(proofId, stepCard) {
   let ready = false;
   let proofData = null;
 
-  // Update timer every second
   const timerInterval = setInterval(() => {
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     contentEl.innerHTML = `Generating ZK proof&hellip; <strong>${elapsed}s</strong>`;
   }, 1000);
 
-  // Poll every 5s
   while (!ready) {
     await sleep(5000);
     try {
       const res = await demoFetch(`/demo/proof-status/${proofId}`);
-      if (res.ready) {
-        ready = true;
-        proofData = res;
-      }
+      if (res.ready) { ready = true; proofData = res; }
     } catch { /* keep polling */ }
   }
 
@@ -939,18 +819,12 @@ async function waitForProof(proofId, stepCard) {
   return proofData;
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Main Demo (async, real API calls)
-// ═══════════════════════════════════════════════════════════════════════
-
 const STEP_DELAY = 500;
 const SCENE_DELAY = 1000;
 let demoRunning = false;
 
-// Counters
 let stats = { unprotected: 0, verified: 0, blocked: 0, proofs: 0 };
 
-// Collected proof_ids for Scene 4
 let collectedProofs = []; // { label, proofId }
 
 async function runDemo() {
@@ -969,14 +843,12 @@ async function runDemo() {
   clearRuleHighlights();
   resetArrows();
   setProgress(0);
-  resetWalletBar();
+  wallet.reset();
 
-  // Animate architecture arrows
   await sleep(400);
   for (let i = 1; i <= 4; i++) { animateArrow(i); await sleep(300); }
   await sleep(500);
 
-  // ── Scene 1: The Gap ───────────────────────────────────────────
   setProgress(5);
   const s1 = makeSceneShell(1, "The Gap",
     "Standard x402 payment \u2014 any valid EIP-3009 signature is accepted. " +
@@ -987,12 +859,10 @@ async function runDemo() {
   s1.scrollIntoView({ behavior: "smooth", block: "start" });
   await sleep(STEP_DELAY);
 
-  // Static: agent request
   appendStep(s1, makeStepCard("info", "Agent Request",
     "Agent wants to fetch weather data for portfolio risk assessment."));
   await sleep(STEP_DELAY);
 
-  // Static: HTTP request (no proof)
   appendStep(s1, makeStepCard("warning", "HTTP Request \u2014 No Proof",
     `<div class="http-block">
 <span class="http-method">GET</span> <span class="http-url">/api/weather</span>
@@ -1000,7 +870,6 @@ async function runDemo() {
 <span class="http-header-name">X-Preflight-Proof:</span> <span class="http-header-val" style="color:var(--text-dim)">&lt;missing&gt;</span></div>`));
   await sleep(STEP_DELAY);
 
-  // Real: call /demo/scene1
   let scene1Data;
   try {
     scene1Data = await demoFetch("/demo/scene1");
@@ -1023,7 +892,6 @@ async function runDemo() {
 
   await sleep(SCENE_DELAY);
 
-  // ── Scene 2: The Fix ───────────────────────────────────────────
   setProgress(20);
   const s2 = makeSceneShell(2, "The Fix",
     "Verified x402 payment \u2014 Preflight ZK proof travels WITH the payment. " +
@@ -1036,7 +904,6 @@ async function runDemo() {
   highlightRules([1, 2, 3, 8, 9], "pass");
   await sleep(STEP_DELAY);
 
-  // Static: payment intent
   appendStep(s2, makeStepCard("info", "Payment Intent",
     `<div class="json-block">${syntaxHighlight({
       amount: "0.001 USDC",
@@ -1046,7 +913,6 @@ async function runDemo() {
     })}</div>`));
   await sleep(STEP_DELAY);
 
-  // Real: Preflight check
   let scene2Check;
   try {
     scene2Check = await demoFetch("/demo/scene2/check");
@@ -1072,7 +938,6 @@ async function runDemo() {
     }
     await sleep(STEP_DELAY);
 
-    // Wait for proof generation (30-60s)
     if (isSat && scene2Check.proof_id) {
       const waitCard = makeStepCard("info", "ZK Proof Generation", "Generating ZK proof&hellip; 0s");
       appendStep(s2, waitCard);
@@ -1080,7 +945,6 @@ async function runDemo() {
       setProgress(50);
       await sleep(STEP_DELAY);
 
-      // Real: verified payment
       let scene2Pay;
       try {
         scene2Pay = await demoFetch("/demo/scene2/pay", {
@@ -1118,7 +982,6 @@ async function runDemo() {
 
   await sleep(SCENE_DELAY);
 
-  // ── Scene 3: The Block ─────────────────────────────────────────
   setProgress(60);
   const s3 = makeSceneShell(3, "The Block",
     "Compromised agent (via indirect prompt injection) attempts a 0.5 USDC transfer " +
@@ -1130,7 +993,6 @@ async function runDemo() {
   clearRuleHighlights();
   await sleep(STEP_DELAY);
 
-  // Static: malicious intent
   appendStep(s3, makeStepCard("warning", "Malicious Intent (IDPI Payload)",
     `<div class="json-block">${syntaxHighlight({
       amount: "0.5 USDC",
@@ -1141,7 +1003,6 @@ async function runDemo() {
 <div class="callout red">Poisoned data from an analytics endpoint triggers the agent to attempt an unauthorized transfer. This is an Indirect Prompt Injection (IDPI) attack.</div>`));
   await sleep(STEP_DELAY);
 
-  // Real: Preflight check (malicious)
   let scene3Data;
   try {
     scene3Data = await demoFetch("/demo/scene3");
@@ -1153,17 +1014,7 @@ async function runDemo() {
   if (scene3Data.ok) {
     const isUnsat = scene3Data.result === "UNSAT" || scene3Data.blocked;
 
-    // Highlight violated rules from real response
-    // Parse violated rules from reason text — the API returns a reason string
-    const violatedRules = [];
-    const reason = scene3Data.reason || "";
-    // Check for common patterns: amount/limit → R1, urgency → R4, override/ignore → R7
-    if (/amount|limit|exceed|0\.05/i.test(reason)) violatedRules.push(1);
-    if (/urgency|urgent/i.test(reason)) violatedRules.push(4);
-    if (/override|ignore|previous/i.test(reason)) violatedRules.push(7);
-    // If no rules detected from reason text but blocked, show generic
-    if (violatedRules.length === 0 && isUnsat) violatedRules.push(1, 4, 7);
-
+    const violatedRules = parseViolatedRules(scene3Data.reason, isUnsat);
     highlightRules(violatedRules, "unsat");
 
     appendStep(s3, makeStepCard(isUnsat ? "unsat" : "sat",
@@ -1187,7 +1038,6 @@ async function runDemo() {
     }
     await sleep(STEP_DELAY);
 
-    // Show violated rules detail
     if (isUnsat) {
       const ruleLines = violatedRules.map(r => {
         const descs = {
@@ -1217,7 +1067,6 @@ async function runDemo() {
 
   await sleep(SCENE_DELAY);
 
-  // ── Scene 4: Independent Verification ──────────────────────────
   setProgress(75);
   const s4 = makeSceneShell(4, "Independent Verification",
     "Anyone can verify these ZK proofs \u2014 no API key, no policy access. " +
@@ -1232,15 +1081,12 @@ async function runDemo() {
   if (collectedProofs.length === 0) {
     appendStep(s4, makeStepCard("warning", "No Proofs", "No proof_ids were collected from previous scenes."));
   } else {
-    // Wait for proofs to be generated before verifying
     for (const { label, proofId } of collectedProofs) {
-      // Show waiting card
       const waitCard = makeStepCard("info", `Waiting for proof: ${label}`, `Generating ZK proof&hellip; 0s`);
       appendStep(s4, waitCard);
       await waitForProof(proofId, waitCard);
       await sleep(STEP_DELAY);
 
-      // Verify
       let verifyData;
       try {
         verifyData = await demoFetch("/demo/scene4/verify", { proof_id: proofId });
@@ -1273,7 +1119,6 @@ async function runDemo() {
       await sleep(STEP_DELAY);
     }
 
-    // Trust properties (static)
     appendStep(s4, makeStepCard("success", "Trust Properties",
       `<div style="display:flex;flex-direction:column;gap:0.5rem;margin:0.25rem 0">
   <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--green)">&#x2713; Zero-knowledge &mdash; policy rules are not revealed to the verifier</div>
@@ -1284,7 +1129,6 @@ async function runDemo() {
 <div class="callout green">The ZK proof bridges trust between two chains: formal verification happens on Base, payment executes on Arc. The proof_id is the connective tissue.</div>`));
   }
 
-  // ── Summary ──────────────────────────────────────────────────
   await sleep(800);
   clearRuleHighlights();
   setProgress(100);
@@ -1295,7 +1139,6 @@ async function runDemo() {
   animateCounter(document.getElementById("stat-verified"), stats.verified, 600);
   animateCounter(document.getElementById("stat-blocked"), stats.blocked, 600);
   animateCounter(document.getElementById("stat-proofs"), stats.proofs, 800);
-  // stat-rules stays at 9
 
   await sleep(1000);
   replayBtn.classList.add("visible");
@@ -1304,11 +1147,7 @@ async function runDemo() {
 
 function replayDemo() { runDemo(); }
 
-// ═══════════════════════════════════════════════════════════════════════
-// Init
-// ═══════════════════════════════════════════════════════════════════════
-
-document.addEventListener("DOMContentLoaded", () => { initWalletBar(); runDemo(); });
+document.addEventListener("DOMContentLoaded", () => { wallet.init(); runDemo(); });
 </script>
 </body>
 </html>

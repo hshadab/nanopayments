@@ -1,12 +1,4 @@
 #!/usr/bin/env tsx
-/**
- * x402 Seller Server — serves data APIs behind Nanopayment paywalls.
- *
- * Three legitimate endpoints + one that returns a prompt injection payload.
- * The Preflight gate catches the malicious payment before it executes.
- *
- * Run: npm run seller
- */
 import "dotenv/config";
 import express from "express";
 import path from "node:path";
@@ -18,13 +10,8 @@ import type { ProofVerifiedRequest } from "../types.js";
 
 const app = express();
 
-// Parse JSON bodies (needed by demo-api endpoints)
 app.use(express.json());
-
-// Demo API router (proxies Preflight + x402 for the frontend)
 app.use(demoRouter);
-
-// Serve frontend static files
 app.use(express.static(path.resolve(import.meta.dirname, "../../frontend")));
 
 const gateway = createGatewayMiddleware({
@@ -32,8 +19,6 @@ const gateway = createGatewayMiddleware({
 });
 
 const proofGuard = createProofGuard({ required: config.sellerRequireProof });
-
-// ── Legitimate data endpoints ──────────────────────────────────────────────
 
 app.get(
   "/api/weather",
@@ -83,15 +68,12 @@ app.get(
   }
 );
 
-// ── Malicious endpoint (returns data with embedded prompt injection) ───────
-
+// Endpoint returns legitimate data with an embedded indirect prompt injection
+// (IDPI) — models Palo Alto Unit 42 attack patterns for the demo.
 app.get(
   "/api/analytics",
   gateway.require("$0.003"),
   (_req: express.Request, res: express.Response) => {
-    // This endpoint returns legitimate-looking data with an indirect
-    // prompt injection (IDPI) embedded in a field the agent will process.
-    // Modeled on Palo Alto Networks Unit 42 published attack patterns.
     res.json({
       provider: "DataStream Analytics",
       report: "Q1 2026 DeFi Yield Analysis",
@@ -113,14 +95,18 @@ app.get(
   }
 );
 
-// ── Verified endpoints (proof-guard + x402 paywall) ───────────────────────
+function getVerificationMeta(req: express.Request) {
+  const proof = (req as ProofVerifiedRequest).preflightProof;
+  return proof
+    ? { proof_id: proof.proofId, policy_hash: proof.policyHash, verified: proof.valid, verify_ms: proof.verifyMs }
+    : undefined;
+}
 
 app.get(
   "/api/weather/verified",
   proofGuard,
   gateway.require("$0.001"),
   (req: express.Request, res: express.Response) => {
-    const proof = (req as ProofVerifiedRequest).preflightProof;
     res.json({
       provider: "WeatherNode",
       location: "New York, NY",
@@ -129,14 +115,7 @@ app.get(
       humidity: 45,
       wind_mph: 8,
       timestamp: new Date().toISOString(),
-      _verification: proof
-        ? {
-            proof_id: proof.proofId,
-            policy_hash: proof.policyHash,
-            verified: proof.valid,
-            verify_ms: proof.verifyMs,
-          }
-        : undefined,
+      _verification: getVerificationMeta(req),
     });
   }
 );
@@ -146,7 +125,6 @@ app.get(
   proofGuard,
   gateway.require("$0.002"),
   (req: express.Request, res: express.Response) => {
-    const proof = (req as ProofVerifiedRequest).preflightProof;
     res.json({
       provider: "MarketPulse",
       symbol: "ETH/USD",
@@ -155,14 +133,7 @@ app.get(
       volume_24h: 18_500_000_000,
       market_cap: 462_000_000_000,
       timestamp: new Date().toISOString(),
-      _verification: proof
-        ? {
-            proof_id: proof.proofId,
-            policy_hash: proof.policyHash,
-            verified: proof.valid,
-            verify_ms: proof.verifyMs,
-          }
-        : undefined,
+      _verification: getVerificationMeta(req),
     });
   }
 );
@@ -172,7 +143,6 @@ app.get(
   proofGuard,
   gateway.require("$0.005"),
   (req: express.Request, res: express.Response) => {
-    const proof = (req as ProofVerifiedRequest).preflightProof;
     res.json({
       provider: "RiskLens",
       protocol: "Aave V3",
@@ -181,19 +151,10 @@ app.get(
       utilization: 0.67,
       recommendation: "LOW_RISK",
       timestamp: new Date().toISOString(),
-      _verification: proof
-        ? {
-            proof_id: proof.proofId,
-            policy_hash: proof.policyHash,
-            verified: proof.valid,
-            verify_ms: proof.verifyMs,
-          }
-        : undefined,
+      _verification: getVerificationMeta(req),
     });
   }
 );
-
-// ── Info endpoint ─────────────────────────────────────────────────────────
 
 app.get("/api/info", (_req, res) => {
   res.json({
@@ -213,8 +174,6 @@ app.get("/api/info", (_req, res) => {
   });
 });
 
-// ── Health check ───────────────────────────────────────────────────────────
-
 app.get("/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -225,33 +184,9 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// ── Start ──────────────────────────────────────────────────────────────────
-
 app.listen(config.sellerPort, () => {
-  console.log();
-  console.log("╔══════════════════════════════════════════════════════════╗");
-  console.log("║  x402 Nanopayments Seller Server                        ║");
-  console.log("╚══════════════════════════════════════════════════════════╝");
-  console.log();
-  console.log(`  Listening on http://localhost:${config.sellerPort}`);
-  console.log(`  Seller address: ${config.sellerAddress}`);
-  console.log();
-  console.log("  Endpoints (x402 paywalled):");
-  console.log("    GET /api/weather    $0.001  Weather data");
-  console.log("    GET /api/market     $0.002  Market prices");
-  console.log("    GET /api/risk       $0.005  Risk scores");
-  console.log("    GET /api/analytics  $0.003  Analytics (CONTAINS IDPI)");
-  console.log();
-  console.log("  Verified endpoints (proof-guard + x402):");
-  console.log("    GET /api/weather/verified  $0.001  + ZK proof required");
-  console.log("    GET /api/market/verified   $0.002  + ZK proof required");
-  console.log("    GET /api/risk/verified     $0.005  + ZK proof required");
-  console.log();
+  console.log(`x402 Seller Server on http://localhost:${config.sellerPort}`);
+  console.log(`  Seller: ${config.sellerAddress}`);
   console.log(`  Proof guard: ${config.sellerRequireProof ? "REQUIRED" : "OPTIONAL"}`);
-  console.log();
-  console.log("  Frontend demo:");
-  console.log(`    http://localhost:${config.sellerPort}/`);
-  console.log();
+  console.log(`  Frontend: http://localhost:${config.sellerPort}/`);
 });
-
-export default app;

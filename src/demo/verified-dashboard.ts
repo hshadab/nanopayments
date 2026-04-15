@@ -1,15 +1,5 @@
-/**
- * Terminal UI for the Verified Nanopayments demo.
- *
- * Focused on protocol-level display:
- *  - Header contents (Payment-Signature + X-Preflight-Proof)
- *  - Side-by-side unprotected vs protected flow
- *  - Proof metadata (proof_id, policy_hash, verify_ms, SAT/UNSAT)
- *  - Timing breakdown per step
- */
 import chalk from "chalk";
-import type { VerifiedPayFlowResult } from "../gateway/verified-pay.js";
-import type { CheckResponse } from "../preflight/client.js";
+import type { VerifiedPayFlowResult, CheckResponse, VerifyProofResponse } from "../types.js";
 
 const LINE = "═".repeat(62);
 const THIN = "─".repeat(62);
@@ -61,12 +51,9 @@ export function printStepHeader(step: string): void {
   console.log(chalk.white.bold(`  > ${step}`));
 }
 
-/**
- * Display unprotected payment flow (no proof).
- */
 export function printUnprotectedPayment(
   url: string,
-  result: { data: unknown; status: number; formattedAmount?: string }
+  result: { data: Record<string, unknown>; status: number; formattedAmount?: string }
 ): void {
   console.log(chalk.yellow("  [Unprotected Flow]"));
   console.log(chalk.gray(`    URL: ${url}`));
@@ -85,15 +72,11 @@ export function printUnprotectedPayment(
   console.log();
 }
 
-/**
- * Display verified payment flow (with proof).
- */
 export function printVerifiedPayment(result: VerifiedPayFlowResult): void {
   console.log(chalk.green("  [Verified Flow]"));
   console.log(chalk.gray(`    Action: ${truncate(result.action, 70)}`));
   console.log();
 
-  // Preflight check
   console.log(chalk.gray("    Preflight check:"));
   if (result.allowed) {
     console.log(chalk.green(`      Result: SAT (allowed)`));
@@ -115,7 +98,6 @@ export function printVerifiedPayment(result: VerifiedPayFlowResult): void {
   }
   console.log();
 
-  // Payment execution (only if allowed)
   if (result.allowed && result.payment) {
     console.log(chalk.gray("    Payment execution:"));
     console.log(chalk.gray(`      Headers sent:`));
@@ -143,37 +125,10 @@ export function printVerifiedPayment(result: VerifiedPayFlowResult): void {
   console.log();
 }
 
-/**
- * Display a blocked malicious action.
- */
-export function printBlockedAction(result: VerifiedPayFlowResult): void {
-  console.log(chalk.red.bold("  [BLOCKED — Policy Violation]"));
-  console.log(chalk.gray(`    Action: ${truncate(result.action, 70)}`));
-  console.log(chalk.red(`    Result: ${result.check.result}`));
-
-  if (result.check.reason) {
-    console.log(chalk.red(`    Reason: ${result.check.reason}`));
-  }
-  if (result.check.violated_rule !== undefined) {
-    console.log(
-      chalk.yellow(`    Violated Rule: #${result.check.violated_rule}`)
-    );
-  }
-  if (result.proofId) {
-    console.log(chalk.magenta(`    ZK Proof: ${result.proofId}`));
-  }
-  console.log(chalk.gray(`    Preflight time: ${result.preflightMs}ms`));
-  console.log(chalk.red(`    Payment signed: NO — UNSAT blocks before EIP-3009`));
-  console.log();
-}
-
-/**
- * Display independent proof verification results.
- */
 export function printProofVerification(
   label: string,
   proofId: string,
-  verifyResult: { valid: boolean; claimed_result: string; verify_ms: number; policy_hash: string }
+  verifyResult: VerifyProofResponse
 ): void {
   const icon = verifyResult.valid ? chalk.green("V") : chalk.red("X");
   console.log(
@@ -187,9 +142,6 @@ export function printProofVerification(
   console.log();
 }
 
-/**
- * Display a Preflight check result (for Scene 3 where no payment is attempted).
- */
 export function printPreflightCheck(
   action: string,
   check: CheckResponse,
@@ -219,9 +171,6 @@ export function printPreflightCheck(
   console.log();
 }
 
-/**
- * Print the final summary comparing protected and unprotected flows.
- */
 export function printSummary(stats: {
   unprotectedPayments: number;
   verifiedPayments: number;

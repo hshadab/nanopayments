@@ -1,22 +1,9 @@
 #!/usr/bin/env tsx
-/**
- * Verified Nanopayments Demo — 4 scenes showing the cryptographic
- * verification layer that closes the gap between x402 authentication
- * and payment authorization.
- *
- * No LangChain / OpenAI dependency. Pure TypeScript.
- *
- * Requires:
- *   - Seller server running (npm run seller)
- *   - ICME_API_KEY + ICME_POLICY_ID in .env
- *   - PRIVATE_KEY + SELLER_ADDRESS in .env
- *
- * Usage: npm run demo:verified
- */
 import "dotenv/config";
 import { config } from "../config.js";
 import { payForResource, ensureBalance } from "../gateway/client.js";
-import { verifyAndPay, type PaymentIntent } from "../gateway/verified-pay.js";
+import { verifyAndPay } from "../gateway/verified-pay.js";
+import type { PaymentIntent } from "../types.js";
 import { PreflightClient } from "../preflight/client.js";
 import { describePaymentAction } from "../preflight/policy.js";
 import {
@@ -25,13 +12,10 @@ import {
   printStepHeader,
   printUnprotectedPayment,
   printVerifiedPayment,
-  printBlockedAction,
   printProofVerification,
   printPreflightCheck,
   printSummary,
 } from "./verified-dashboard.js";
-
-// ── Demo intents ──────────────────────────────────────────────────────────
 
 const LEGITIMATE_INTENT: PaymentIntent = {
   amount: "0.001",
@@ -52,8 +36,6 @@ const MALICIOUS_INTENT: PaymentIntent = {
   resourceUrl: `${config.sellerBaseUrl}/api/weather/verified`,
 };
 
-// ── Stats ─────────────────────────────────────────────────────────────────
-
 const stats = {
   unprotectedPayments: 0,
   verifiedPayments: 0,
@@ -64,23 +46,12 @@ const stats = {
 
 const collectedProofIds: { label: string; proofId: string }[] = [];
 
-// ── Main ──────────────────────────────────────────────────────────────────
-
 async function main() {
   printBanner();
 
-  // Setup
   printStepHeader("Checking Gateway balance...");
-  try {
-    await ensureBalance(1);
-    console.log("  Gateway balance confirmed.\n");
-  } catch {
-    console.log("  Gateway balance check skipped (set PRIVATE_KEY to enable).\n");
-  }
-
-  // ────────────────────────────────────────────────────────────────────────
-  // Scene 1: The Gap — Unprotected payment
-  // ────────────────────────────────────────────────────────────────────────
+  await ensureBalance(1);
+  console.log("  Gateway balance confirmed.\n");
 
   printSceneHeader(
     1,
@@ -91,25 +62,14 @@ async function main() {
   );
 
   printStepHeader("Paying for weather data without proof...");
-  try {
-    const result = await payForResource(
-      `${config.sellerBaseUrl}/api/weather`
-    );
-    printUnprotectedPayment(`${config.sellerBaseUrl}/api/weather`, {
-      data: result.data,
-      status: result.status,
-    });
-    stats.unprotectedPayments++;
-  } catch (err) {
-    console.log(
-      `  Unprotected payment error: ${(err as Error).message}\n` +
-        "  (This is expected if the seller server is not running or wallet is not funded)\n"
-    );
-  }
-
-  // ────────────────────────────────────────────────────────────────────────
-  // Scene 2: The Fix — Protected payment (legitimate)
-  // ────────────────────────────────────────────────────────────────────────
+  const result = await payForResource(
+    `${config.sellerBaseUrl}/api/weather`
+  );
+  printUnprotectedPayment(`${config.sellerBaseUrl}/api/weather`, {
+    data: result.data,
+    status: result.status,
+  });
+  stats.unprotectedPayments++;
 
   printSceneHeader(
     2,
@@ -120,27 +80,19 @@ async function main() {
   );
 
   printStepHeader("Preflight verify + pay for weather data (legitimate)...");
-  try {
-    const result = await verifyAndPay(LEGITIMATE_INTENT);
-    printVerifiedPayment(result);
+  const verifiedResult = await verifyAndPay(LEGITIMATE_INTENT);
+  printVerifiedPayment(verifiedResult);
 
-    if (result.allowed) {
-      stats.verifiedPayments++;
-    }
-    if (result.proofId) {
-      stats.proofsGenerated++;
-      collectedProofIds.push({
-        label: "Scene 2 — Legitimate payment (SAT)",
-        proofId: result.proofId,
-      });
-    }
-  } catch (err) {
-    console.log(`  Verified payment error: ${(err as Error).message}\n`);
+  if (verifiedResult.allowed) {
+    stats.verifiedPayments++;
   }
-
-  // ────────────────────────────────────────────────────────────────────────
-  // Scene 3: The Block — Malicious payment blocked
-  // ────────────────────────────────────────────────────────────────────────
+  if (verifiedResult.proofId) {
+    stats.proofsGenerated++;
+    collectedProofIds.push({
+      label: "Scene 2 — Legitimate payment (SAT)",
+      proofId: verifiedResult.proofId,
+    });
+  }
 
   printSceneHeader(
     3,
@@ -151,43 +103,35 @@ async function main() {
   );
 
   printStepHeader("Preflight verify for malicious transfer...");
-  try {
-    const preflightClient = new PreflightClient();
+  const preflightClient = new PreflightClient();
 
-    const action = describePaymentAction({
-      amount: MALICIOUS_INTENT.amount,
-      recipient: MALICIOUS_INTENT.recipient,
-      vendor: MALICIOUS_INTENT.vendor,
-      purpose: MALICIOUS_INTENT.purpose,
-    });
+  const action = describePaymentAction({
+    amount: MALICIOUS_INTENT.amount,
+    recipient: MALICIOUS_INTENT.recipient,
+    vendor: MALICIOUS_INTENT.vendor,
+    purpose: MALICIOUS_INTENT.purpose,
+  });
 
-    const checkStart = Date.now();
-    const check = await preflightClient.checkAction(
-      config.icmePolicyId,
-      action
-    );
-    const checkMs = Date.now() - checkStart;
+  const checkStart = Date.now();
+  const check = await preflightClient.checkAction(
+    config.icmePolicyId,
+    action
+  );
+  const checkMs = Date.now() - checkStart;
 
-    printPreflightCheck(action, check, checkMs);
+  printPreflightCheck(action, check, checkMs);
 
-    const allowed = check.result === "SAT" && !check.blocked;
-    if (!allowed) {
-      stats.blockedPayments++;
-    }
-    if (check.proof_id) {
-      stats.proofsGenerated++;
-      collectedProofIds.push({
-        label: "Scene 3 — Malicious transfer (UNSAT)",
-        proofId: check.proof_id,
-      });
-    }
-  } catch (err) {
-    console.log(`  Preflight check error: ${(err as Error).message}\n`);
+  const allowed = check.result === "SAT" && !check.blocked;
+  if (!allowed) {
+    stats.blockedPayments++;
   }
-
-  // ────────────────────────────────────────────────────────────────────────
-  // Scene 4: Independent Verification
-  // ────────────────────────────────────────────────────────────────────────
+  if (check.proof_id) {
+    stats.proofsGenerated++;
+    collectedProofIds.push({
+      label: "Scene 3 — Malicious transfer (UNSAT)",
+      proofId: check.proof_id,
+    });
+  }
 
   if (collectedProofIds.length > 0) {
     printSceneHeader(
@@ -200,45 +144,34 @@ async function main() {
     const preflightClient = new PreflightClient();
 
     for (const { label, proofId } of collectedProofIds) {
-      try {
-        printStepHeader(`Verifying: ${label}`);
-        // Wait for proof generation before verification
-        printStepHeader("Waiting for ZK proof generation...");
-        await preflightClient.waitForProof(proofId, {
-          timeoutMs: 120_000,
-          intervalMs: 5_000,
-          onWaiting: (elapsed) => {
-            process.stdout.write(`\r  Proof generation: ${Math.round(elapsed / 1000)}s elapsed...`);
-          },
-        });
-        process.stdout.write("\n");
+      printStepHeader(`Verifying: ${label}`);
+      printStepHeader("Waiting for ZK proof generation...");
+      await preflightClient.waitForProof(proofId, {
+        timeoutMs: 120_000,
+        intervalMs: 5_000,
+        onWaiting: (elapsed) => {
+          process.stdout.write(`\r  Proof generation: ${Math.round(elapsed / 1000)}s elapsed...`);
+        },
+      });
+      process.stdout.write("\n");
 
-        // Try public verification — may fail with 409 if already consumed
-        try {
-          const verifyResult = await preflightClient.verifyProof(proofId);
-          printProofVerification(label, proofId, verifyResult);
-        } catch (verifyErr) {
-          const msg = (verifyErr as Error).message;
-          if (msg.includes("409") || msg.includes("proof used")) {
-            // Proof was already consumed by the seller's proof-guard — expected!
-            console.log(`  V ${label}`);
-            console.log(`    Proof ID: ${proofId}`);
-            console.log(`    Status:   ALREADY VERIFIED (consumed by seller during payment)`);
-            console.log(`    This confirms the proof was valid and single-use.\n`);
-          } else {
-            throw verifyErr;
-          }
+      try {
+        const verifyResult = await preflightClient.verifyProof(proofId);
+        printProofVerification(label, proofId, verifyResult);
+      } catch (verifyErr) {
+        const msg = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+        if (msg.includes("409") || msg.includes("proof used")) {
+          console.log(`  V ${label}`);
+          console.log(`    Proof ID: ${proofId}`);
+          console.log(`    Status:   ALREADY VERIFIED (consumed by seller during payment)`);
+          console.log(`    This confirms the proof was valid and single-use.\n`);
+        } else {
+          throw verifyErr;
         }
-        stats.proofsVerified++;
-      } catch (err) {
-        console.log(
-          `  Proof verification error: ${(err as Error).message}\n`
-        );
       }
+      stats.proofsVerified++;
     }
   }
-
-  // ── Summary ────────────────────────────────────────────────────────────
 
   printSummary(stats);
 }

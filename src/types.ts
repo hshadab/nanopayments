@@ -1,12 +1,84 @@
 import type { Request } from "express";
 
-// ── Preflight Proof Header ──────────────────────────────────────────────────
+export interface PaymentIntent {
+  amount: string;       // e.g. "0.01"
+  recipient: string;    // seller address
+  vendor: string;       // vendor name
+  purpose: string;      // what the payment is for
+  resourceUrl: string;  // the x402 endpoint to pay
+}
 
-/**
- * JSON payload carried in the X-Preflight-Proof HTTP header.
- * Attached by the buyer alongside Payment-Signature so the seller
- * can verify policy compliance before accepting the Nanopayment.
- */
+
+export type CheckResult = "SAT" | "UNSAT";
+
+export interface CheckResponse {
+  result: CheckResult;
+  blocked: boolean;
+  reason: string;
+  violated_rule?: number;
+  proof_id?: string;
+  proof?: string;
+  check_id: string;
+}
+
+export interface ProofStatusResponse {
+  proof_id: string;
+  policy_id: string;
+  policy_hash: string;
+  result: "SAT" | "UNSAT";
+  valid: boolean;
+  used: boolean;
+  trace_length: number;
+  created_at: string;
+  verify_ms: number;
+}
+
+export interface VerifyProofResponse {
+  valid: boolean;
+  policy_hash: string;
+  claimed_result: "SAT" | "UNSAT";
+  verify_ms: number;
+  used: boolean;
+}
+
+export interface PolicyCompileEvent {
+  type: "progress" | "done" | "error";
+  status?: string;
+  step?: string;
+  message?: string;
+  policy_id?: string;
+  scenario_count?: number;
+}
+
+
+export interface VerifiedPayOptions {
+  proofId: string;
+  policyHash?: string;
+  method?: "GET" | "POST" | "PUT" | "DELETE";
+  body?: Record<string, unknown>;
+  headers?: Record<string, string>;
+}
+
+export interface VerifiedPayResult<T = Record<string, unknown>> {
+  data: T;
+  amount: bigint;
+  formattedAmount: string;
+  transaction: string;
+  status: number;
+  proofHeader: PreflightProofHeader;
+}
+
+export interface VerifiedPayFlowResult {
+  allowed: boolean;
+  payment?: VerifiedPayResult;
+  check: CheckResponse;
+  proofId?: string;
+  action: string;
+  preflightMs: number;
+  paymentMs?: number;
+}
+
+
 export interface PreflightProofHeader {
   proof_id: string;
   policy_hash?: string;
@@ -14,11 +86,7 @@ export interface PreflightProofHeader {
   timestamp: string;
 }
 
-// ── Extended Express Request ────────────────────────────────────────────────
 
-/**
- * Proof verification metadata attached to the request by proof-guard middleware.
- */
 export interface ProofVerification {
   proofId: string;
   valid: boolean;
@@ -27,10 +95,6 @@ export interface ProofVerification {
   verifyMs: number;
 }
 
-/**
- * Express Request extended with proof verification data.
- * Available after proof-guard middleware runs.
- */
 export interface ProofVerifiedRequest extends Request {
   preflightProof?: ProofVerification;
 }

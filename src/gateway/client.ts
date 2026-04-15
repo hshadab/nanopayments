@@ -3,10 +3,7 @@ import { config } from "../config.js";
 
 let gatewayClient: GatewayClient | null = null;
 
-/**
- * Get or create the Circle Gateway client for Arc Testnet.
- * Uses a singleton so the agent and demo share the same session.
- */
+/** Singleton GatewayClient so the agent and demo share the same session. */
 export function getGatewayClient(): GatewayClient {
   if (!gatewayClient) {
     gatewayClient = new GatewayClient({
@@ -17,9 +14,6 @@ export function getGatewayClient(): GatewayClient {
   return gatewayClient;
 }
 
-/**
- * Check balances and deposit USDC if needed.
- */
 export async function ensureBalance(minUsdc = 1): Promise<void> {
   const client = getGatewayClient();
   const balances = await client.getBalances();
@@ -35,14 +29,10 @@ export async function ensureBalance(minUsdc = 1): Promise<void> {
   }
 }
 
-/**
- * Pay for a resource via x402 Nanopayment.
- * The GatewayClient handles the full 402 → sign → retry flow.
- */
 export async function payForResource(
   url: string
-): Promise<{ data: unknown; status: number }> {
+): Promise<{ data: Record<string, unknown>; status: number }> {
   const client = getGatewayClient();
-  const { data, status } = await client.pay(url);
+  const { data, status } = await client.pay<Record<string, unknown>>(url);
   return { data, status };
 }

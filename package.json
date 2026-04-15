@@ -6,24 +6,17 @@
   "scripts": {
     "build": "tsc",
     "seller": "tsx src/seller/server.ts",
-    "agent": "tsx src/agent/index.ts",
     "demo": "tsx src/demo/verified-demo.ts",
-    "demo:verified": "tsx src/demo/verified-demo.ts",
-    "demo:legacy": "tsx src/demo/run.ts",
     "policy:create": "tsx src/preflight/create-policy.ts"
   },
   "dependencies": {
     "@circle-fin/x402-batching": "^2.1.0",
-    "@langchain/core": "^0.3.0",
-    "@langchain/openai": "^0.3.0",
     "@x402/core": "^2.9.0",
     "@x402/evm": "^2.9.0",
     "chalk": "^5.3.0",
     "dotenv": "^16.4.0",
     "express": "^4.21.0",
-    "langchain": "^0.3.0",
-    "viem": "^2.21.0",
-    "zod": "^3.23.0"
+    "viem": "^2.21.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

@@ -1,21 +1,11 @@
 #!/usr/bin/env tsx
-/**
- * Create an ICME Preflight account by paying 5 USDC on Base mainnet
- * via the x402 protocol (EIP-3009 transferWithAuthorization).
- *
- * Prerequisites:
- *   - PRIVATE_KEY in .env must have >= 5 USDC on Base mainnet
- *
- * Usage: npx tsx scripts/create-icme-account.ts [username]
- */
+// Create an ICME Preflight account by paying 5 USDC on Base mainnet via x402.
 import "dotenv/config";
-import { createWalletClient, http, type Hex } from "viem";
+import type { Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { base } from "viem/chains";
-import { randomBytes } from "crypto";
+import { getUsdcBalance, signAndBuildPaymentHeader, type X402Requirements } from "./x402-base-pay.js";
 
 const ICME_CREATE_URL = "https://api.icme.io/v1/createUserX402";
-const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;
 const USERNAME = process.argv[2] || "icme-circle-nanopay-demo";
 
 async function main() {
@@ -30,19 +20,7 @@ async function main() {
   console.log(`Username: ${USERNAME}`);
   console.log();
 
-  // Check USDC balance on Base via raw RPC
-  const balanceData = `0x70a08231000000000000000000000000${account.address.slice(2).toLowerCase()}`;
-  const rpcRes = await fetch("https://mainnet.base.org", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "eth_call",
-      params: [{ to: USDC_BASE, data: balanceData }, "latest"],
-    }),
-  });
-  const rpcResult = (await rpcRes.json()) as { result: string };
-  const balance = parseInt(rpcResult.result, 16);
-
+  const balance = await getUsdcBalance(account.address);
   console.log(`USDC balance on Base: ${balance / 1e6} USDC`);
 
   if (balance < 5_000_000) {
@@ -51,7 +29,6 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 1: Hit the endpoint to get 402 payment requirements
   console.log("\nStep 1: Getting payment requirements...");
   const initRes = await fetch(ICME_CREATE_URL, {
     method: "POST",
@@ -59,20 +36,7 @@ async function main() {
     body: JSON.stringify({ username: USERNAME }),
   });
 
-  const requirements = await initRes.json() as {
-    accepts: Array<{
-      amount: string;
-      asset: string;
-      payTo: string;
-      network: string;
-      maxTimeoutSeconds: number;
-      scheme: string;
-      extra: { assetTransferMethod: string; name: string; version: string };
-    }>;
-    extensions: { bazaar: unknown };
-    resource: { url: string; description: string };
-    x402Version: number;
-  };
+  const requirements = await initRes.json() as X402Requirements;
 
   if (!requirements.accepts || requirements.accepts.length === 0) {
     console.error("Unexpected response:", JSON.stringify(requirements, null, 2));
@@ -85,76 +49,10 @@ async function main() {
   console.log(`  Network: ${payReq.network}`);
   console.log(`  Method: ${payReq.extra.assetTransferMethod}`);
 
-  // Step 2: Sign EIP-3009 transferWithAuthorization
   console.log("\nStep 2: Signing EIP-3009 authorization...");
+  const paymentHeader = await signAndBuildPaymentHeader(privateKey, requirements);
 
-  const walletClient = createWalletClient({
-    account,
-    chain: base,
-    transport: http(),
-  });
-
-  const now = Math.floor(Date.now() / 1000);
-  const nonce = `0x${randomBytes(32).toString("hex")}` as Hex;
-
-  const authorization = {
-    from: account.address,
-    to: payReq.payTo as `0x${string}`,
-    value: BigInt(payReq.amount),
-    validAfter: BigInt(now - 600),
-    validBefore: BigInt(now + payReq.maxTimeoutSeconds),
-    nonce,
-  };
-
-  // Standard USDC EIP-712 domain (not Circle batched)
-  const domain = {
-    name: payReq.extra.name,       // "USD Coin"
-    version: payReq.extra.version, // "2"
-    chainId: parseInt(payReq.network.split(":")[1]), // 8453
-    verifyingContract: payReq.asset as `0x${string}`, // USDC contract
-  };
-
-  const signature = await walletClient.signTypedData({
-    account,
-    domain,
-    types: {
-      TransferWithAuthorization: [
-        { name: "from", type: "address" },
-        { name: "to", type: "address" },
-        { name: "value", type: "uint256" },
-        { name: "validAfter", type: "uint256" },
-        { name: "validBefore", type: "uint256" },
-        { name: "nonce", type: "bytes32" },
-      ],
-    } as const,
-    primaryType: "TransferWithAuthorization" as const,
-    message: authorization,
-  });
-
-  console.log(`  Signature: ${signature.slice(0, 20)}...`);
-
-  // Step 3: Build Payment-Signature header and retry
   console.log("\nStep 3: Sending payment...");
-
-  const paymentPayload = {
-    x402Version: requirements.x402Version,
-    payload: {
-      signature,
-      authorization: {
-        from: authorization.from,
-        to: authorization.to,
-        value: authorization.value.toString(),
-        validAfter: authorization.validAfter.toString(),
-        validBefore: authorization.validBefore.toString(),
-        nonce: authorization.nonce,
-      },
-    },
-    resource: requirements.resource,
-    accepted: payReq,
-  };
-
-  const paymentHeader = Buffer.from(JSON.stringify(paymentPayload)).toString("base64");
-
   const createRes = await fetch(ICME_CREATE_URL, {
     method: "POST",
     headers: {
