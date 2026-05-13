@@ -11,6 +11,13 @@
  * can independently verify "this proofId was used to authorize this on-chain
  * payment by this seller" via Arc Explorer without needing access to ICME
  * or the buyer's wallet.
+ *
+ * Canonical deployment (Arc Testnet, chainId 5042002):
+ *     0x76ce30319c561beaa6dcf936017fcbb1e84b18b1
+ *     https://explorer.testnet.arc.network/address/0x76ce30319c561beaa6dcf936017fcbb1e84b18b1
+ *
+ * Override by setting ATTESTATION_CONTRACT_ADDRESS in .env to use your own
+ * deployment.
  */
 import {
   createPublicClient,

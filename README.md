@@ -24,6 +24,14 @@ ICME Labs x Circle Agent Stack
 
 **Demo.** `npm run demo` runs six scenes end-to-end on Arc Testnet, including three semantic-only attacks (purpose mismatch, urgency framing, prompt-injected override) that pass every numeric guardrail Circle Wallet and Turnkey can express but are provably blocked by Preflight before any EIP-3009 signature is produced. The terminal output shows per-rule satisfaction tables so a reviewer can see *which clause* fired on each block.
 
+**Live on Arc Testnet.** The `NanopaymentAttestation` contract is deployed and serving real on-chain writes:
+
+| Contract | Address | Explorer |
+|---|---|---|
+| `NanopaymentAttestation` | `0x76ce30319c561beaa6dcf936017fcbb1e84b18b1` | [view on Arc Explorer](https://explorer.testnet.arc.network/address/0x76ce30319c561beaa6dcf936017fcbb1e84b18b1) |
+
+Every verified payment in scene 2 produces a real on-chain attestation `(proofId, policyHash, paymentTxHash, SAT)`, browseable in Arc Explorer. Source: [`contracts/NanopaymentAttestation.sol`](contracts/NanopaymentAttestation.sol).
+
 ---
 
 ## Why this matters for Nanopayments

@@ -2103,8 +2103,11 @@ app.<span class="ci">get</span>(<span class="cs">"/api/risk"</span>,    gateway.
     tags: [{ label: "Arc attestation", cls: "cyan" }, { label: "viem", cls: "" }, { label: "Public audit", cls: "" }],
     code:
 `<span class="cc">// src/attestation/arc-attestor.ts — viem writer for Arc Testnet.</span>
+<span class="cc">// Live deployment: 0x76ce30319c561beaa6dcf936017fcbb1e84b18b1 (Arc Testnet)</span>
 <span class="ck">import</span> { <span class="ci">createWalletClient</span>, <span class="ci">http</span>, <span class="ci">keccak256</span>, <span class="ci">toHex</span> } <span class="ck">from</span> <span class="cs">"viem"</span>;
 <span class="ck">import</span> { <span class="ci">arcTestnet</span> } <span class="ck">from</span> <span class="cs">"./arc-chain.js"</span>;          <span class="cc">// chainId 5042002</span>
+
+<span class="ck">const</span> <span class="ci">CONTRACT</span> = <span class="cs">"0x76ce30319c561beaa6dcf936017fcbb1e84b18b1"</span>;
 
 <span class="ck">export async function</span> <span class="ci">attestProof</span>(
   proofId: <span class="ck">string</span>, policyHash: <span class="ck">string</span>,
