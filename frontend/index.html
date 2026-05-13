@@ -1384,11 +1384,16 @@ let stats = { unprotected: 0, verified: 0, blocked: 0, proofs: 0 };
 
 let collectedProofs = []; // { label, proofId }
 
+// Captured during scene 2 so scene 5 can open the matching Arc Explorer
+// pages at the end of the run for the recorded walkthrough.
+let lastAttestation = null; // { txHash, contract, explorerUrl }
+
 async function runDemo() {
   if (demoRunning) return;
   demoRunning = true;
   stats = { unprotected: 0, verified: 0, blocked: 0, proofs: 0 };
   collectedProofs = [];
+  lastAttestation = null;
 
   const container = document.getElementById("scene-container");
   const summary = document.getElementById("summary");
@@ -1608,6 +1613,8 @@ Rule 9: Only payments for data API services (weather, market data, risk).     [s
           const explorerUrl = attest.explorer_url || "";
           const proofIdHash = attest.proof_id_hash || "";
           const blockNumber = attest.block_number || "";
+          // Remember for end-of-demo Arc Explorer auto-open in scene 5.
+          lastAttestation = { txHash, contract, explorerUrl };
           appendStep(s2, makeStepCard("success", "On-Arc Attestation \u2014 Proof \u21c4 Payment Binding <span class=\"badge verified\" style=\"margin-left:0.5rem\">ON-ARC</span>",
             `<div class="http-block">
 <span class="http-header-name">contract:</span> <span class="http-header-val">${contract || "N/A"}</span>
@@ -1904,6 +1911,39 @@ ${blockNumber ? `<span class="http-header-name">block:</span> <span class="http-
   <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--green)">On-Arc attestation &mdash; settlement is bound to its proof, publicly auditable on Arc Explorer</div>
 </div>
 <div class="callout green">The ZK proof bridges trust between two chains: formal verification happens on Base, payment executes on Arc, and the seller anchors the binding on Arc. The proof_id is the connective tissue \u2014 and Arc is where the binding becomes public record.</div>`));
+
+    // Auto-open Arc Explorer at the end of the demo so a screen recording
+    // shows the on-chain artifact resolving in the public block explorer.
+    // We open two pages: the specific attestation tx (proves THIS run wrote
+    // on-chain) and the contract address (shows accumulated history).
+    const CONTRACT_ADDRESS = "0x76ce30319c561beaa6dcf936017fcbb1e84b18b1";
+    const EXPLORER_BASE = "https://explorer.testnet.arc.network";
+    const txUrl = lastAttestation && lastAttestation.txHash
+      ? (lastAttestation.explorerUrl || `${EXPLORER_BASE}/tx/${lastAttestation.txHash}`)
+      : null;
+    const contractUrl = `${EXPLORER_BASE}/address/${(lastAttestation && lastAttestation.contract) || CONTRACT_ADDRESS}`;
+
+    const openCard = makeStepCard("info", "Opening Arc Explorer \u2014 Public On-Chain Record",
+      `<div class="callout cyan">In <span id="arc-explorer-countdown">3</span>s this demo will open Arc Explorer in new tabs so you can see the attestation resolve on a public block explorer with no ICME access required:
+<div style="margin-top:0.5rem;display:flex;flex-direction:column;gap:0.25rem;font-family:var(--font-mono);font-size:0.72rem">
+${txUrl ? `<div>&rarr; <a href="${txUrl}" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:underline">Attestation tx (this run)</a></div>` : ''}
+<div>&rarr; <a href="${contractUrl}" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:underline">NanopaymentAttestation contract (all runs)</a></div>
+</div>
+<div style="margin-top:0.5rem;font-size:0.72rem;color:var(--muted)">If your browser blocks the popup, click the links above.</div></div>`);
+    appendStep(s5, openCard);
+
+    // Count down visibly, then open the tabs.
+    for (let i = 3; i >= 1; i--) {
+      const cd = openCard.querySelector("#arc-explorer-countdown");
+      if (cd) cd.textContent = String(i);
+      await sleep(1000);
+    }
+    try {
+      if (txUrl) window.open(txUrl, "_blank", "noopener");
+      window.open(contractUrl, "_blank", "noopener");
+    } catch (e) {
+      // Popup blocked — links above remain clickable.
+    }
   }
 
   // ────────────────────────────────────────────────────────────────
