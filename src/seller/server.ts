@@ -6,6 +6,8 @@ import { createGatewayMiddleware } from "@circle-fin/x402-batching/server";
 import { config } from "../config.js";
 import { createProofGuard } from "./proof-guard.js";
 import { demoRouter } from "./demo-api.js";
+import { attestAfterPay, type AttestedRequest } from "./attest-after-pay.js";
+import { isAttestationOnchain } from "../attestation/arc-attestor.js";
 import type { ProofVerifiedRequest } from "../types.js";
 
 const app = express();
@@ -97,15 +99,32 @@ app.get(
 
 function getVerificationMeta(req: express.Request) {
   const proof = (req as ProofVerifiedRequest).preflightProof;
-  return proof
-    ? { proof_id: proof.proofId, policy_hash: proof.policyHash, verified: proof.valid, verify_ms: proof.verifyMs }
-    : undefined;
+  if (!proof) return undefined;
+  const attestation = (req as AttestedRequest).attestation;
+  return {
+    proof_id: proof.proofId,
+    policy_hash: proof.policyHash,
+    verified: proof.valid,
+    verify_ms: proof.verifyMs,
+    attestation: attestation
+      ? {
+          mode: attestation.mode, // "onchain" | "simulated"
+          tx_hash: attestation.attestationTxHash,
+          contract: attestation.attestationContract,
+          chain_id: attestation.chainId,
+          block_number: String(attestation.blockNumber),
+          explorer_url: attestation.explorerUrl,
+          proof_id_hash: attestation.proofIdHash,
+        }
+      : undefined,
+  };
 }
 
 app.get(
   "/api/weather/verified",
   proofGuard,
   gateway.require("$0.001"),
+  attestAfterPay(),
   (req: express.Request, res: express.Response) => {
     res.json({
       provider: "WeatherNode",
@@ -124,6 +143,7 @@ app.get(
   "/api/market/verified",
   proofGuard,
   gateway.require("$0.002"),
+  attestAfterPay(),
   (req: express.Request, res: express.Response) => {
     res.json({
       provider: "MarketPulse",
@@ -142,6 +162,7 @@ app.get(
   "/api/risk/verified",
   proofGuard,
   gateway.require("$0.005"),
+  attestAfterPay(),
   (req: express.Request, res: express.Response) => {
     res.json({
       provider: "RiskLens",
@@ -188,5 +209,12 @@ app.listen(config.sellerPort, () => {
   console.log(`x402 Seller Server on http://localhost:${config.sellerPort}`);
   console.log(`  Seller: ${config.sellerAddress}`);
   console.log(`  Proof guard: ${config.sellerRequireProof ? "REQUIRED" : "OPTIONAL"}`);
+  console.log(
+    `  Arc attestation: ${
+      isAttestationOnchain()
+        ? `ON-CHAIN (${process.env.ATTESTATION_CONTRACT_ADDRESS})`
+        : "SIMULATED (deploy contracts/NanopaymentAttestation.sol and set ATTESTATION_CONTRACT_ADDRESS to switch to on-chain)"
+    }`
+  );
   console.log(`  Frontend: http://localhost:${config.sellerPort}/`);
 });

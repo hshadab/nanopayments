@@ -11,6 +11,18 @@ export interface PaymentIntent {
 
 export type CheckResult = "SAT" | "UNSAT";
 
+/** Fields the Preflight solver extracts from a natural-language action. */
+export interface ExtractedFields {
+  transferAmount?: number;
+  recipientInRegistry?: boolean;
+  urgencyTacticDetected?: boolean;
+  emotionalAppealDetected?: boolean;
+  falseAuthorityClaim?: boolean;
+  overrideAttempt?: boolean;
+  serviceCategory?: string;
+  [key: string]: unknown;
+}
+
 export interface CheckResponse {
   result: CheckResult;
   blocked: boolean;
@@ -19,6 +31,11 @@ export interface CheckResponse {
   proof_id?: string;
   proof?: string;
   check_id: string;
+  /** Solver-extracted fields used to evaluate the policy. */
+  extracted?: ExtractedFields;
+  z3_result?: CheckResult | string;
+  ar_result?: CheckResult | string;
+  llm_result?: CheckResult | string;
 }
 
 export interface ProofStatusResponse {

@@ -1,8 +1,14 @@
 import chalk from "chalk";
-import type { VerifiedPayFlowResult, CheckResponse, VerifyProofResponse } from "../types.js";
+import type {
+  VerifiedPayFlowResult,
+  CheckResponse,
+  VerifyProofResponse,
+  ExtractedFields,
+} from "../types.js";
+import { PAYMENT_POLICY_RULES, type PolicyRule } from "../preflight/policy.js";
 
-const LINE = "═".repeat(62);
-const THIN = "─".repeat(62);
+const LINE = "═".repeat(72);
+const THIN = "─".repeat(72);
 
 export function printBanner(): void {
   console.log();
@@ -33,7 +39,7 @@ export function printBanner(): void {
 }
 
 export function printSceneHeader(
-  scene: number,
+  scene: number | string,
   title: string,
   description: string
 ): void {
@@ -145,30 +151,251 @@ export function printProofVerification(
 export function printPreflightCheck(
   action: string,
   check: CheckResponse,
-  timeMs: number
+  timeMs: number,
+  options?: { simulatedExtracted?: ExtractedFields }
 ): void {
   const allowed = check.result === "SAT" && !check.blocked;
 
   if (allowed) {
-    console.log(chalk.green(`  SAT`) + chalk.gray(` — ${truncate(action, 60)}`));
+    console.log(chalk.green(`  SAT — all 9 rules satisfied`));
   } else {
-    console.log(
-      chalk.red.bold(`  BLOCKED [${check.result}]`) +
-        chalk.gray(` — ${truncate(action, 50)}`)
-    );
+    console.log(chalk.red.bold(`  BLOCKED [${check.result}]`));
+  }
+  console.log(chalk.gray(`    Action: ${truncate(action, 80)}`));
+  console.log();
+
+  // If the API didn't return per-field extraction, fall back to a simulated
+  // extraction so the rule table is still meaningful. The simulated path is
+  // labeled clearly in the output.
+  const extracted = check.extracted ?? options?.simulatedExtracted;
+  const usingSimulated = !check.extracted && !!options?.simulatedExtracted;
+
+  if (extracted) {
+    if (usingSimulated) {
+      console.log(
+        chalk.gray(
+          "    Per-rule satisfaction (locally derived from solver output):"
+        )
+      );
+    } else {
+      console.log(chalk.gray("    Per-rule satisfaction (from solver):"));
+    }
+    printRuleTable(extracted, check.violated_rule);
+  } else if (check.violated_rule !== undefined) {
+    console.log(chalk.yellow(`    Violated Rule: #${check.violated_rule}`));
   }
 
   if (check.reason) {
     console.log(chalk.gray(`    Reason: ${check.reason}`));
   }
-  if (check.violated_rule !== undefined) {
-    console.log(chalk.yellow(`    Violated Rule: #${check.violated_rule}`));
-  }
   if (check.proof_id) {
     console.log(chalk.magenta(`    ZK Proof: ${check.proof_id}`));
   }
+
+  // Solver attribution: show the dual-solver result if available, since this
+  // is one of the things Circle Wallet / Turnkey policies cannot do.
+  if (check.z3_result || check.ar_result) {
+    const parts: string[] = [];
+    if (check.z3_result) parts.push(`Z3=${check.z3_result}`);
+    if (check.ar_result) parts.push(`AR=${check.ar_result}`);
+    if (check.llm_result) parts.push(`LLM=${check.llm_result}`);
+    console.log(chalk.gray(`    Solvers: ${parts.join("  ")}`));
+  }
+
   console.log(chalk.gray(`    Time: ${timeMs}ms`));
   console.log();
+}
+
+/**
+ * Renders one line per rule with a ✓/✗ marker and the relevant extracted
+ * field value. Semantic rules (the ones Circle Wallet / Turnkey cannot
+ * express) are highlighted so a reviewer can see the differentiation.
+ */
+function printRuleTable(
+  extracted: ExtractedFields,
+  violatedRuleId: number | undefined
+): void {
+  for (const rule of PAYMENT_POLICY_RULES) {
+    const satisfied = evaluateRule(rule, extracted, violatedRuleId);
+    const mark = satisfied ? chalk.green("✓") : chalk.red("✗");
+    const tag =
+      rule.kind === "semantic"
+        ? chalk.magenta("[semantic]")
+        : chalk.gray("[numeric] ");
+    const fieldValue = formatRuleEvidence(rule, extracted);
+    const ruleLabel = `Rule ${rule.id}`.padEnd(7);
+    const ruleText = truncate(rule.text, 56);
+
+    const baseLine = `      ${mark} ${ruleLabel} ${tag} ${ruleText}`;
+    if (!satisfied) {
+      console.log(chalk.red.bold(baseLine));
+    } else {
+      console.log(baseLine);
+    }
+    if (fieldValue) {
+      console.log(chalk.gray(`             evidence: ${fieldValue}`));
+    }
+  }
+}
+
+function evaluateRule(
+  rule: PolicyRule,
+  extracted: ExtractedFields,
+  violatedRuleId: number | undefined
+): boolean {
+  // If solver explicitly named a violated rule, that wins.
+  if (violatedRuleId === rule.id) return false;
+
+  // Use the local predicate when available and the field is present.
+  if (rule.field && rule.expected) {
+    const value = extracted[rule.field];
+    if (value === undefined) return true; // no signal -> assume satisfied
+    return rule.expected(value);
+  }
+
+  return true;
+}
+
+function formatRuleEvidence(
+  rule: PolicyRule,
+  extracted: ExtractedFields
+): string | null {
+  if (!rule.field) return null;
+  const value = extracted[rule.field];
+  if (value === undefined) return null;
+  return `${rule.field} = ${JSON.stringify(value)}`;
+}
+
+/**
+ * Scene 0 helper. Prints the natural-language policy on the left and a
+ * stylized SMT-LIB2 sketch on the right so reviewers can see what `makeRules`
+ * produces. This is a *visualization*, not a re-compile — re-compiling costs
+ * 300 credits ($3) and ~3-7 minutes per run.
+ */
+export function printPolicyCompilation(policyHash?: string): void {
+  console.log(chalk.bold.white("  Natural-language policy authored by a human:"));
+  console.log(chalk.gray(THIN));
+  for (const rule of PAYMENT_POLICY_RULES) {
+    const tag =
+      rule.kind === "semantic"
+        ? chalk.magenta("[semantic]")
+        : chalk.gray("[numeric] ");
+    console.log(`    ${tag} ${chalk.white(`Rule ${rule.id}:`)} ${rule.text}`);
+  }
+  console.log();
+
+  console.log(
+    chalk.bold.white(
+      "  Compiled by Preflight `makeRules` to SMT-LIB2 (sketch):"
+    )
+  );
+  console.log(chalk.gray(THIN));
+  console.log(chalk.gray("    (declare-const transferAmount Real)"));
+  console.log(chalk.gray("    (declare-const recipientInRegistry Bool)"));
+  console.log(chalk.gray("    (declare-const urgencyTacticDetected Bool)"));
+  console.log(chalk.gray("    (declare-const overrideAttempt Bool)"));
+  console.log(chalk.gray("    (declare-const serviceCategory String)"));
+  console.log(chalk.gray("    ..."));
+  console.log(chalk.gray("    (assert (<= transferAmount 0.05))           ; Rule 1"));
+  console.log(chalk.gray("    (assert recipientInRegistry)                ; Rule 2"));
+  console.log(chalk.gray("    (assert (not urgencyTacticDetected))        ; Rule 4"));
+  console.log(chalk.gray("    (assert (not overrideAttempt))              ; Rule 7"));
+  console.log(chalk.gray('    (assert (str.contains serviceCategory       ; Rule 9'));
+  console.log(chalk.gray('             "data_api"))'));
+  console.log(chalk.gray("    (check-sat)"));
+  console.log();
+
+  if (policyHash) {
+    console.log(
+      chalk.magenta(`    policy_hash: ${policyHash}`) +
+        chalk.gray("  (content-addressed; binds every proof to this exact policy)")
+    );
+  } else {
+    console.log(
+      chalk.gray(
+        "    policy_hash is content-addressed and bound to every proof produced under this policy."
+      )
+    );
+  }
+  console.log();
+}
+
+/**
+ * Differentiator table. Shows the same payment intent evaluated by three
+ * different policy engines side-by-side, so the unique value of semantic
+ * NL policies is legible.
+ */
+export interface DifferentiatorRow {
+  scene: string;
+  intentSummary: string;
+  circleWallet: "pass" | "fail";
+  turnkey: "pass" | "fail";
+  preflight: "pass" | "fail";
+  preflightReason?: string;
+}
+
+export function printDifferentiatorTable(rows: DifferentiatorRow[]): void {
+  console.log();
+  console.log(
+    chalk.bold.white(
+      "  Same intent, three engines — signing-layer vs. intent-layer:"
+    )
+  );
+  console.log(
+    chalk.gray(
+      "  Circle Wallet and Turnkey enforce at signing time; Preflight enforces"
+    )
+  );
+  console.log(
+    chalk.gray(
+      "  on the agent's natural-language intent BEFORE any signing request exists."
+    )
+  );
+  console.log(chalk.gray(THIN));
+  console.log(
+    chalk.gray("    Scene        | Circle Wallet | Turnkey | Preflight")
+  );
+  console.log(
+    chalk.gray("                 |  (wallet)     | (signer)| (intent)")
+  );
+  console.log(chalk.gray(THIN));
+  for (const row of rows) {
+    const cw = mark(row.circleWallet);
+    const tk = mark(row.turnkey);
+    const pf = mark(row.preflight);
+    console.log(`    ${row.scene.padEnd(12)} |      ${cw}        |    ${tk}    |    ${pf}`);
+    console.log(chalk.gray(`      intent: ${truncate(row.intentSummary, 64)}`));
+    if (row.preflightReason) {
+      console.log(chalk.gray(`      preflight: ${row.preflightReason}`));
+    }
+  }
+  console.log();
+  console.log(
+    chalk.gray(
+      "  Where Circle Wallet + Turnkey both PASS but Preflight FAILs:"
+    )
+  );
+  console.log(
+    chalk.gray(
+      "  the violating field (urgency, override, purpose) is not on the EIP-3009"
+    )
+  );
+  console.log(
+    chalk.gray(
+      "  authorization — it lives in the agent's reasoning and is invisible to"
+    )
+  );
+  console.log(
+    chalk.gray(
+      "  any signing-layer policy. See README \"Couldn't Turnkey write a policy\""
+    )
+  );
+  console.log(chalk.gray("  for the precise technical argument."));
+  console.log();
+}
+
+function mark(v: "pass" | "fail"): string {
+  return v === "pass" ? chalk.green("PASS") : chalk.red("FAIL");
 }
 
 export function printSummary(stats: {

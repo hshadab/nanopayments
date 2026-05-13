@@ -11,9 +11,13 @@ interface CheckItSseEvent {
   step?: string;
   result?: string;
   z3_result?: string;
+  ar_result?: string;
+  llm_result?: string;
   detail?: string;
   zk_proof_id?: string;
   check_id?: string;
+  violated_rule?: number;
+  extracted?: Record<string, unknown>;
 }
 
 interface MakeRulesJsonResponse {
@@ -107,6 +111,11 @@ export class PreflightClient {
       reason: doneEvent.detail || "",
       proof_id: doneEvent.zk_proof_id || undefined,
       check_id: doneEvent.check_id || "",
+      violated_rule: doneEvent.violated_rule,
+      extracted: doneEvent.extracted as CheckResponse["extracted"],
+      z3_result: doneEvent.z3_result as CheckResponse["z3_result"],
+      ar_result: doneEvent.ar_result as CheckResponse["ar_result"],
+      llm_result: doneEvent.llm_result as CheckResponse["llm_result"],
     };
   }
 

@@ -116,14 +116,57 @@
     });
   };
 
-  ns.parseViolatedRules = function parseViolatedRules(reason, isBlocked) {
-    const violated = [];
-    const text = reason || "";
-    if (/amount|limit|exceed|0\.05/i.test(text)) violated.push(1);
-    if (/urgency|urgent/i.test(text)) violated.push(4);
-    if (/override|ignore|previous/i.test(text)) violated.push(7);
-    if (violated.length === 0 && isBlocked) violated.push(1, 4, 7);
-    return violated;
+  // Maps the free-text `detail` field returned by Preflight checkIt onto
+  // the structured rule IDs in PAYMENT_POLICY_RULES (1..9).
+  ns.parseViolatedRules = function parseViolatedRules(reason, isBlocked, hint) {
+    const violated = new Set();
+    const text = (reason || "").toLowerCase();
+
+    // If the server provided an explicit numeric hint (violated_rule), trust it.
+    if (typeof hint === "number" && hint >= 1 && hint <= 9) {
+      violated.add(hint);
+    }
+
+    // Text heuristics. Order doesn't matter — keep them broad and fall through.
+    if (/amount|exceeds?|limit|0\.05|over the cap/.test(text)) violated.add(1);
+    if (/recipient|vendor|registry|allowlist|approved/.test(text)) violated.add(2);
+    if (/daily|aggregate|1\.00|day/.test(text)) violated.add(3);
+    if (/urgenc|urgent|hurry|deadline|seconds/.test(text)) violated.add(4);
+    if (/emotion|appeal|please|begging/.test(text)) violated.add(5);
+    if (/authority|cfo|ceo|treasury|operations team/.test(text)) violated.add(6);
+    if (/override|ignore|previous|system note|rule 1-9|disregard/.test(text)) violated.add(7);
+    if (/negative|below zero/.test(text)) violated.add(8);
+    if (/service|category|data api|weather|market|risk/.test(text)) {
+      // Only fire R9 when the text talks about category violation, not just mentioning weather.
+      if (/category|service|not.*api|mismatch|social media|engagement/.test(text)) {
+        violated.add(9);
+      }
+    }
+    if (/social media|engagement boost/.test(text)) violated.add(9);
+
+    // Fallback: if blocked but we couldn't parse anything, light a sensible default.
+    if (violated.size === 0 && isBlocked) {
+      [1, 4, 7].forEach(r => violated.add(r));
+    }
+    return Array.from(violated).sort((a, b) => a - b);
+  };
+
+  // Human-readable descriptions for each policy rule.
+  ns.RULE_DESCRIPTIONS = {
+    1: "Amount exceeds 0.05 USDC per-transaction cap",
+    2: "Recipient not in approved vendor registry",
+    3: "Daily aggregate transfers exceed 1.00 USDC",
+    4: "Urgency tactic detected in action description",
+    5: "Emotional appeal detected in action description",
+    6: "False authority claim detected in action description",
+    7: "Override / ignore-rules attempt detected",
+    8: "Transfer amount is negative",
+    9: "Service category outside approved data-API set",
+  };
+
+  ns.RULE_KINDS = {
+    1: "numeric", 2: "numeric", 3: "numeric", 4: "semantic",
+    5: "semantic", 6: "semantic", 7: "semantic", 8: "numeric", 9: "semantic",
   };
 
   ns.truncAddr = function truncAddr(addr) {

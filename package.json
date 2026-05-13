@@ -7,7 +7,8 @@
     "build": "tsc",
     "seller": "tsx src/seller/server.ts",
     "demo": "tsx src/demo/verified-demo.ts",
-    "policy:create": "tsx src/preflight/create-policy.ts"
+    "policy:create": "tsx src/preflight/create-policy.ts",
+    "deploy:attestation": "tsx scripts/deploy-attestation.ts"
   },
   "dependencies": {
     "@circle-fin/x402-batching": "^2.1.0",
@@ -21,6 +22,7 @@
   "devDependencies": {
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
+    "solc": "^0.8.20",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }
