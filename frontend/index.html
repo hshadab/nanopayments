@@ -74,7 +74,7 @@ body::after {
    never overlap or clip the page header. flex-wrap lets it stack on
    narrow viewports without bleeding into adjacent content. */
 #wallet-bar {
-  padding: 0.6rem 1rem;
+  padding: 0.75rem 1rem;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -83,6 +83,7 @@ body::after {
   justify-content: center;
   gap: 1.25rem;
   flex-wrap: wrap;
+  row-gap: 0.4rem;
   font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--text-dim);
@@ -917,10 +918,11 @@ body { overflow: hidden; }
 .container {
   max-width: none;
   height: 100vh;
-  /* Just clear the 3px progress bar. Wallet bar is now in-flow inside
-     the container — see grid-template-rows below (wallet, header, stage,
-     footer). */
-  padding: 8px 1.25rem 0;
+  /* 3px for the progress bar + ~14px breathing room so the wallet bar
+     doesn't hug the viewport edge or sit underneath the progress bar.
+     Wallet bar is now in-flow inside the container — see
+     grid-template-rows below (wallet, header, stage, footer). */
+  padding: 18px 1.25rem 0;
   display: grid;
   grid-template-rows: auto auto 1fr 28px;
   gap: 0.5rem;
@@ -1532,12 +1534,12 @@ async function waitForProof(proofId, stepCard) {
   return proofData;
 }
 
-// Pacing — bumped +4s on each step and scene after additional viewer
-// feedback. STEP_DELAY is the pause between cards inside a scene;
+// Pacing — STEP_DELAY is the pause between cards inside a scene;
 // SCENE_DELAY is the pause between scenes. The proof-generation polls
-// in scene 5 add their own wall-clock time on top of these.
-const STEP_DELAY = 9400;
-const SCENE_DELAY = 11000;
+// in scene 5 add their own wall-clock time on top of these. Full run
+// lands around the 5-minute mark.
+const STEP_DELAY = 5400;
+const SCENE_DELAY = 7000;
 let demoRunning = false;
 
 let stats = { unprotected: 0, verified: 0, blocked: 0, proofs: 0 };
