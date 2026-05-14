@@ -2111,6 +2111,16 @@ ${txUrl ? `<div style="margin-top:0.6rem;font-family:var(--font-mono);font-size:
   // Rendered after Scene 5 as a summary visualization.
   // ────────────────────────────────────────────────────────────────
   if (differentiatorRows.length > 0) {
+    // Fade out any currently-visible scene first. Scenes inside
+    // #scene-container are absolutely positioned (inset:0), so leaving
+    // Scene 5 .visible while we add the differentiator scene causes both
+    // headers/bodies to stack on top of each other. Same dance that
+    // makeSceneShell() does between numbered scenes.
+    container.querySelectorAll(".scene.visible").forEach(prev => {
+      prev.classList.remove("visible");
+      prev.classList.add("exiting");
+      setTimeout(() => { if (prev.parentNode) prev.parentNode.removeChild(prev); }, 600);
+    });
     const diffScene = document.createElement("div");
     diffScene.className = "scene";
     diffScene.id = "scene-differentiator";
