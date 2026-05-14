@@ -70,26 +70,27 @@ body::after {
 }
 
 /* ── Wallet Status Bar ─────────────────────────────────────────── */
+/* Lives inside .container so it's part of normal document flow and can
+   never overlap or clip the page header. flex-wrap lets it stack on
+   narrow viewports without bleeding into adjacent content. */
 #wallet-bar {
-  position: fixed; top: 3px; left: 0; right: 0;
-  padding: 0.7rem 1rem 0.6rem;
+  padding: 0.6rem 1rem;
   background: var(--bg-card);
-  border-bottom: 1px solid var(--border);
-  z-index: 9998;
+  border: 1px solid var(--border);
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1.75rem;
+  gap: 1.25rem;
+  flex-wrap: wrap;
   font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--text-dim);
   opacity: 0;
-  transform: translateY(-100%);
-  transition: opacity 0.4s ease, transform 0.4s ease;
+  transition: opacity 0.4s ease;
 }
 #wallet-bar.visible {
   opacity: 1;
-  transform: translateY(0);
 }
 #wallet-bar .wb-item {
   display: flex;
@@ -916,14 +917,16 @@ body { overflow: hidden; }
 .container {
   max-width: none;
   height: 100vh;
-  /* 3px progress + 36px wallet bar + breathing room */
-  padding: 60px 1.25rem 0;
+  /* Just clear the 3px progress bar. Wallet bar is now in-flow inside
+     the container — see grid-template-rows below (wallet, header, stage,
+     footer). */
+  padding: 8px 1.25rem 0;
   display: grid;
-  grid-template-rows: auto 1fr 28px;
+  grid-template-rows: auto auto 1fr 28px;
   gap: 0.5rem;
 }
 
-/* Compact header — one line, fully clear of the fixed wallet bar above */
+/* Compact header — sits in-flow directly under the wallet bar */
 .header {
   padding: 0.5rem 0 0.4rem;
   margin: 0;
@@ -1095,21 +1098,23 @@ body { overflow: hidden; }
 </head>
 <body>
 <div id="progress-bar"></div>
-<div id="wallet-bar">
-  <div class="wb-item"><span class="wb-dot green"></span><span class="wb-addr" id="wb-address">loading...</span></div>
-  <div class="wb-sep"></div>
-  <div class="wb-item">Balance: <span class="wb-val cyan" id="wb-balance">--</span> USDC</div>
-  <div class="wb-sep"></div>
-  <div class="wb-item">Spent: <span class="wb-val green" id="wb-spent">$0.000</span></div>
-  <div class="wb-sep"></div>
-  <div class="wb-item">Blocked: <span class="wb-val red" id="wb-blocked">$0.000</span></div>
-  <div class="wb-sep"></div>
-  <div class="wb-item"><span class="wb-chain">Arc Testnet</span></div>
-</div>
 
 <button class="wt-play-btn fixed-top-right" id="wt-play-btn" onclick="startWalkthrough()" title="Play walkthrough + demo" aria-label="Play walkthrough and demo">&#x25b6;</button>
 
 <div class="container">
+
+  <!-- ── Wallet Status Bar (in-flow so it never clips the header) ── -->
+  <div id="wallet-bar">
+    <div class="wb-item"><span class="wb-dot green"></span><span class="wb-addr" id="wb-address">loading...</span></div>
+    <div class="wb-sep"></div>
+    <div class="wb-item">Balance: <span class="wb-val cyan" id="wb-balance">--</span> USDC</div>
+    <div class="wb-sep"></div>
+    <div class="wb-item">Spent: <span class="wb-val green" id="wb-spent">$0.000</span></div>
+    <div class="wb-sep"></div>
+    <div class="wb-item">Blocked: <span class="wb-val red" id="wb-blocked">$0.000</span></div>
+    <div class="wb-sep"></div>
+    <div class="wb-item"><span class="wb-chain">Arc Testnet</span></div>
+  </div>
 
   <!-- ── Header ──────────────────────────────────────────────── -->
   <header class="header">
@@ -1527,13 +1532,12 @@ async function waitForProof(proofId, stepCard) {
   return proofData;
 }
 
-// Pacing — bumped +3s on each step and scene after viewer feedback that
-// individual cards were flashing past too fast to read. STEP_DELAY is the
-// pause between cards inside a scene; SCENE_DELAY is the pause between
-// scenes. The proof-generation polls in scene 5 add their own wall-clock
-// time on top of these. Full run lands around the 5-minute mark.
-const STEP_DELAY = 5400;
-const SCENE_DELAY = 7000;
+// Pacing — bumped +4s on each step and scene after additional viewer
+// feedback. STEP_DELAY is the pause between cards inside a scene;
+// SCENE_DELAY is the pause between scenes. The proof-generation polls
+// in scene 5 add their own wall-clock time on top of these.
+const STEP_DELAY = 9400;
+const SCENE_DELAY = 11000;
 let demoRunning = false;
 
 let stats = { unprotected: 0, verified: 0, blocked: 0, proofs: 0 };

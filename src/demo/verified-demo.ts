@@ -26,8 +26,8 @@ import {
   type DifferentiatorRow,
 } from "./verified-dashboard.js";
 
-const SCENE_PAUSE_MS = 9000;
-const STEP_PAUSE_MS = 6000;
+const SCENE_PAUSE_MS = 13000;
+const STEP_PAUSE_MS = 10000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function step(msg: string): Promise<void> {
