@@ -1527,12 +1527,13 @@ async function waitForProof(proofId, stepCard) {
   return proofData;
 }
 
-// Pacing — tuned so a full run lands around the 4-minute mark for the
-// recorded walkthrough. STEP_DELAY is the pause between cards inside a
-// scene; SCENE_DELAY is the pause between scenes. The proof-generation
-// polls in scene 5 add their own wall-clock time on top of these.
-const STEP_DELAY = 2400;
-const SCENE_DELAY = 4000;
+// Pacing — bumped +3s on each step and scene after viewer feedback that
+// individual cards were flashing past too fast to read. STEP_DELAY is the
+// pause between cards inside a scene; SCENE_DELAY is the pause between
+// scenes. The proof-generation polls in scene 5 add their own wall-clock
+// time on top of these. Full run lands around the 5-minute mark.
+const STEP_DELAY = 5400;
+const SCENE_DELAY = 7000;
 let demoRunning = false;
 
 let stats = { unprotected: 0, verified: 0, blocked: 0, proofs: 0 };
