@@ -26,8 +26,14 @@ import {
   type DifferentiatorRow,
 } from "./verified-dashboard.js";
 
-const SCENE_PAUSE_MS = 3000;
+const SCENE_PAUSE_MS = 6000;
+const STEP_PAUSE_MS = 3000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function step(msg: string): Promise<void> {
+  printStepHeader(msg);
+  await sleep(STEP_PAUSE_MS);
+}
 
 const LEGITIMATE_INTENT: PaymentIntent = {
   amount: "0.001",
@@ -205,7 +211,7 @@ async function main() {
   );
   console.log();
 
-  printStepHeader("Checking Gateway balance...");
+  await step("Checking Gateway balance...");
   await ensureBalance(1);
   console.log("  Gateway balance confirmed.\n");
 
@@ -221,7 +227,7 @@ async function main() {
   );
   await sleep(SCENE_PAUSE_MS);
 
-  printStepHeader("Paying for weather data without proof...");
+  await step("Paying for weather data without proof...");
   const result = await payForResource(`${config.sellerBaseUrl}/api/weather`);
   printUnprotectedPayment(`${config.sellerBaseUrl}/api/weather`, {
     data: result.data,
@@ -245,7 +251,7 @@ async function main() {
   );
   await sleep(SCENE_PAUSE_MS);
 
-  printStepHeader("Preflight verify + pay for weather data...");
+  await step("Preflight verify + pay for weather data...");
   const verifiedResult = await verifyAndPay(LEGITIMATE_INTENT);
   printVerifiedPayment(verifiedResult);
 
@@ -293,7 +299,7 @@ async function main() {
       "discarded by the time the signing request is built."
   );
   await sleep(SCENE_PAUSE_MS);
-  printStepHeader("Preflight verify for purpose-mismatch intent...");
+  await step("Preflight verify for purpose-mismatch intent...");
   await runPreflightOnly(preflightClient, PURPOSE_MISMATCH_INTENT, PURPOSE_MISMATCH_SIMULATED);
 
   differentiatorRows.push({
@@ -318,7 +324,7 @@ async function main() {
       "urgencyTacticDetected = true from the NL purpose and fires Rule 4."
   );
   await sleep(SCENE_PAUSE_MS);
-  printStepHeader("Preflight verify for urgency-tactic intent...");
+  await step("Preflight verify for urgency-tactic intent...");
   await runPreflightOnly(preflightClient, URGENCY_INTENT, URGENCY_SIMULATED);
 
   differentiatorRows.push({
@@ -344,7 +350,7 @@ async function main() {
       "overrideAttempt = true, and fires Rule 7. No signature is created."
   );
   await sleep(SCENE_PAUSE_MS);
-  printStepHeader("Preflight verify for override-injection intent...");
+  await step("Preflight verify for override-injection intent...");
   await runPreflightOnly(preflightClient, OVERRIDE_INTENT, OVERRIDE_SIMULATED);
 
   differentiatorRows.push({
@@ -369,7 +375,7 @@ async function main() {
       "still emits a proof, so the principal can audit which clauses fired."
   );
   await sleep(SCENE_PAUSE_MS);
-  printStepHeader("Preflight verify for direct attack...");
+  await step("Preflight verify for direct attack...");
   await runPreflightOnly(preflightClient, DIRECT_ATTACK_INTENT, DIRECT_ATTACK_SIMULATED);
 
   differentiatorRows.push({
@@ -394,8 +400,8 @@ async function main() {
     await sleep(SCENE_PAUSE_MS);
 
     for (const { label, proofId } of collectedProofIds) {
-      printStepHeader(`Verifying: ${label}`);
-      printStepHeader("Waiting for ZK proof generation...");
+      await step(`Verifying: ${label}`);
+      await step("Waiting for ZK proof generation...");
       await preflightClient.waitForProof(proofId, {
         timeoutMs: 120_000,
         intervalMs: 5_000,
@@ -443,7 +449,7 @@ async function main() {
     );
     await sleep(SCENE_PAUSE_MS);
 
-    printStepHeader("Reading attestation from Arc contract...");
+    await step("Reading attestation from Arc contract...");
     try {
       const record = await getAttestation(scene2ProofId);
       const contractAddr = (process.env.ATTESTATION_CONTRACT_ADDRESS || "") as
