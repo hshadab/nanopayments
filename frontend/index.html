@@ -72,19 +72,19 @@ body::after {
 /* ── Wallet Status Bar ─────────────────────────────────────────── */
 #wallet-bar {
   position: fixed; top: 3px; left: 0; right: 0;
-  height: 36px;
+  padding: 0.7rem 1rem 0.6rem;
   background: var(--bg-card);
   border-bottom: 1px solid var(--border);
   z-index: 9998;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 1.5rem;
+  gap: 1.75rem;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: 0.85rem;
   color: var(--text-dim);
   opacity: 0;
-  transform: translateY(-36px);
+  transform: translateY(-100%);
   transition: opacity 0.4s ease, transform 0.4s ease;
 }
 #wallet-bar.visible {
@@ -94,11 +94,11 @@ body::after {
 #wallet-bar .wb-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem;
   white-space: nowrap;
 }
 #wallet-bar .wb-dot {
-  width: 6px; height: 6px;
+  width: 8px; height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -119,16 +119,16 @@ body::after {
 #wallet-bar .wb-val.red   { color: var(--red); }
 #wallet-bar .wb-val.cyan  { color: var(--cyan); }
 #wallet-bar .wb-chain {
-  padding: 0.15rem 0.5rem;
-  border-radius: 3px;
+  padding: 0.3rem 0.75rem;
+  border-radius: 4px;
   border: 1px solid var(--border);
   color: var(--text-dim);
-  font-size: 0.6rem;
+  font-size: 0.78rem;
   letter-spacing: 0.5px;
 }
 #wallet-bar .wb-sep {
   width: 1px;
-  height: 16px;
+  height: 22px;
   background: var(--border);
 }
 /* Pulse animation for spend flash */
@@ -149,13 +149,13 @@ body::after {
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
-  padding-top: 2.5rem; /* space for fixed wallet bar */
+  padding-top: 4.5rem; /* extra space for taller fixed wallet bar */
 }
 
 /* ── Header ────────────────────────────────────────────────────── */
 .header {
   text-align: center;
-  padding: 3rem 0 2rem;
+  padding: 4rem 0 2rem;
 }
 .header h1 {
   font-family: var(--font-mono);
@@ -196,6 +196,101 @@ body::after {
 .meta-item .dot.green { background: var(--green); }
 .meta-item .dot.purple { background: var(--purple); }
 .meta-item .dot.orange { background: var(--orange); }
+
+/* ── Circle Stack chip strip (B1) ──────────────────────────────── */
+.circle-chips {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0.9rem auto 0;
+  max-width: 760px;
+}
+.circle-chip {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.5px;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.025);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.circle-chip .chip-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+.circle-chip.chip-cyan .chip-dot { background: var(--cyan); }
+.circle-chip.chip-orange .chip-dot { background: var(--orange); }
+.circle-chip.chip-purple .chip-dot { background: var(--purple); }
+
+/* ── Per-scene Circle infra callout (B2) ───────────────────────── */
+.circle-infra-callout {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0.4rem 0 0.9rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid rgba(0,230,118,0.25);
+  background: rgba(0,230,118,0.05);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+.circle-infra-callout::before {
+  content: "Circle infra";
+  font-size: 0.55rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--green);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: rgba(0,230,118,0.1);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.circle-infra-callout.idle {
+  border-color: rgba(179,136,255,0.2);
+  background: rgba(179,136,255,0.04);
+}
+.circle-infra-callout.idle::before {
+  content: "Circle infra";
+  color: var(--purple);
+  background: rgba(179,136,255,0.1);
+}
+.circle-infra-callout strong { color: var(--text-bright); }
+.circle-infra-callout code {
+  font-family: var(--font-mono);
+  color: var(--cyan);
+  font-size: 0.66rem;
+}
+
+/* ── Policy hash line (B3) ─────────────────────────────────────── */
+.policy-hash {
+  margin-top: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--text-dim);
+  word-break: break-all;
+  opacity: 0.75;
+  line-height: 1.4;
+}
+.policy-hash .ph-label {
+  color: var(--text-dim);
+  opacity: 0.7;
+  margin-right: 0.3rem;
+}
+.policy-hash .ph-val {
+  color: var(--cyan);
+}
+.policy-hash.empty .ph-val { color: var(--text-dim); opacity: 0.5; }
 
 /* ── Architecture Diagram ──────────────────────────────────────── */
 .diagram-section {
@@ -447,6 +542,23 @@ body::after {
   align-items: center;
   gap: 0.5rem;
 }
+.rules-counter {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 1px;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+  color: var(--text-dim);
+  transition: color 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+.rules-counter.has-fired {
+  color: var(--cyan);
+  border-color: rgba(0,229,255,0.4);
+  background: rgba(0,229,255,0.08);
+}
 
 .rule-item {
   font-family: var(--font-mono);
@@ -463,22 +575,41 @@ body::after {
   color: var(--text-dim);
   margin-right: 0.25rem;
 }
+@keyframes rule-fire-sat {
+  0%   { box-shadow: 0 0 0 rgba(0,229,255,0); transform: scale(1); }
+  25%  { box-shadow: 0 0 24px rgba(0,229,255,0.65); transform: scale(1.035); }
+  100% { box-shadow: 0 0 12px rgba(0,229,255,0.22); transform: scale(1); }
+}
+@keyframes rule-fire-unsat {
+  0%   { box-shadow: 0 0 0 rgba(255,23,68,0); transform: scale(1); }
+  25%  { box-shadow: 0 0 26px rgba(255,23,68,0.7); transform: scale(1.04); }
+  100% { box-shadow: 0 0 14px rgba(255,23,68,0.28); transform: scale(1); }
+}
+@keyframes rule-fire-pass {
+  0%   { box-shadow: 0 0 0 rgba(0,230,118,0); transform: scale(1); }
+  25%  { box-shadow: 0 0 22px rgba(0,230,118,0.6); transform: scale(1.03); }
+  100% { box-shadow: 0 0 10px rgba(0,230,118,0.2); transform: scale(1); }
+}
 .rule-item.active-sat {
-  border-color: rgba(0,229,255,0.3);
-  background: rgba(0,229,255,0.06);
+  border-color: rgba(0,229,255,0.55);
+  background: rgba(0,229,255,0.1);
   color: var(--cyan);
-  box-shadow: 0 0 10px rgba(0,229,255,0.1);
+  box-shadow: 0 0 12px rgba(0,229,255,0.22);
+  animation: rule-fire-sat 0.9s ease-out;
 }
 .rule-item.active-unsat {
-  border-color: rgba(255,23,68,0.3);
-  background: rgba(255,23,68,0.06);
+  border-color: rgba(255,23,68,0.6);
+  background: rgba(255,23,68,0.1);
   color: var(--red);
-  box-shadow: 0 0 10px rgba(255,23,68,0.1);
+  box-shadow: 0 0 14px rgba(255,23,68,0.28);
+  animation: rule-fire-unsat 0.9s ease-out;
 }
 .rule-item.active-pass {
-  border-color: rgba(0,230,118,0.3);
-  background: rgba(0,230,118,0.06);
+  border-color: rgba(0,230,118,0.5);
+  background: rgba(0,230,118,0.09);
   color: var(--green);
+  box-shadow: 0 0 10px rgba(0,230,118,0.2);
+  animation: rule-fire-pass 0.9s ease-out;
 }
 .policy-id {
   margin-top: 1rem;
@@ -758,38 +889,6 @@ body::after {
   border-color: rgba(0,229,255,0.3);
 }
 
-.wt-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 1rem;
-  gap: 0.5rem;
-}
-.wt-btn {
-  padding: 0.5rem 1rem;
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border-hi);
-  border-radius: 4px;
-  cursor: pointer;
-  letter-spacing: 1px;
-  transition: all 0.2s ease;
-}
-.wt-btn:hover:not(:disabled) {
-  border-color: var(--cyan);
-  color: var(--cyan);
-}
-.wt-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.wt-btn.skip { color: var(--text-dim); border-style: dashed; }
-.wt-btn.skip:hover { color: var(--orange); border-color: var(--orange); }
-.wt-status {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--text-dim);
-}
 .wt-handoff {
   margin-top: 1rem;
   padding: 0.85rem 1rem;
@@ -1019,15 +1118,13 @@ body { overflow: hidden; }
       Cryptographic proofs close the gap between x402 authentication and payment authorization.
       ZK proofs travel <em>with</em> every payment.
     </p>
+    <div class="circle-chips" aria-label="Circle stack components exercised">
+      <span class="circle-chip"><span class="chip-dot"></span>USDC on Arc</span>
+      <span class="circle-chip"><span class="chip-dot"></span>Circle Gateway</span>
+      <span class="circle-chip chip-cyan"><span class="chip-dot"></span>Nanopayments / x402</span>
+      <span class="circle-chip chip-orange"><span class="chip-dot"></span>Arc Explorer attestation</span>
+    </div>
   </header>
-
-  <!-- ── Meta Bar ────────────────────────────────────────────── -->
-  <div class="meta-bar">
-    <div class="meta-item"><span class="dot"></span>Preflight ZK (Base)</div>
-    <div class="meta-item"><span class="dot green"></span>x402 Nanopayments (Arc)</div>
-    <div class="meta-item"><span class="dot purple"></span>JOLT-Atlas Prover</div>
-    <div class="meta-item"><span class="dot orange"></span>SMT + Formal Verification</div>
-  </div>
 
   <!-- ── Stage Shell (single-viewport rotating panes + policy sidebar) ── -->
   <div class="stage-shell">
@@ -1141,7 +1238,7 @@ body { overflow: hidden; }
       <div class="arch-action-text">
         <strong>Codebase walkthrough &rarr; live demo.</strong>
         Seven annotated panels show where Circle infrastructure
-        (<code style="font-family:var(--font-mono);color:var(--cyan)">@circle-fin/x402-batching</code>, Gateway middleware, on-Arc attestation, USDC on Arc) is wired in, then the demo runs end-to-end without scrolling. Press <strong style="color:var(--green)">PLAY</strong> in the top-right to begin.
+        (<code style="font-family:var(--font-mono);color:var(--cyan)">@circle-fin/x402-batching</code>, Gateway middleware, on-Arc attestation, USDC on Arc) is wired in.
       </div>
     </div>
   </div>
@@ -1162,12 +1259,6 @@ body { overflow: hidden; }
           <div class="wt-note-body" id="wt-note-body"></div>
           <div class="wt-circle-tag" id="wt-circle-tag"></div>
         </div>
-      </div>
-      <div class="wt-controls">
-        <button class="wt-btn" id="wt-prev" onclick="wtPrev()">&larr; PREV</button>
-        <span class="wt-status" id="wt-status">Step 1 of 6</span>
-        <button class="wt-btn" id="wt-next" onclick="wtNext()">NEXT &rarr;</button>
-        <button class="wt-btn skip" id="wt-skip" onclick="wtSkipToDemo()">SKIP TO DEMO &rarr;&rarr;</button>
       </div>
       <div class="wt-handoff" id="wt-handoff">
         Walkthrough complete &mdash; running the live integration against the seller&hellip;
@@ -1208,6 +1299,17 @@ body { overflow: hidden; }
           <span class="stat-label">Policy Rules</span>
         </div>
       </div>
+
+      <!-- Arc Explorer CTA — populated at the end of runDemo().            -->
+      <!-- Sits inside the summary pane so it's the final on-screen element -->
+      <!-- the presenter clicks during the recorded walkthrough.            -->
+      <div id="summary-arc-cta" style="margin-top:1.25rem;text-align:center">
+        <a id="summary-arc-link" href="https://testnet.arcscan.app/address/0x76ce30319c561beaa6dcf936017fcbb1e84b18b1" target="_blank" rel="noopener"
+           style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.4rem 0.85rem;border-radius:6px;background:transparent;color:var(--cyan);font-family:var(--font-mono);font-size:0.72rem;font-weight:500;text-decoration:none;letter-spacing:0.3px;border:1px solid var(--cyan)">
+          <span id="summary-arc-label">View attestation on Arc Explorer</span> &rarr;
+        </a>
+        <div id="summary-arc-sub" style="margin-top:0.5rem;font-family:var(--font-mono);font-size:0.65rem;color:var(--text-dim)"></div>
+      </div>
     </div>
   </div><!-- /pane-summary -->
 
@@ -1215,7 +1317,10 @@ body { overflow: hidden; }
 
   <!-- ── Policy Panel (always visible right sidebar) ─────────── -->
   <aside class="policy-panel">
-    <h3>Payment Policy</h3>
+    <h3>
+      <span>Payment Policy</span>
+      <span id="rules-fired-counter" class="rules-counter" title="Unique rules that have fired during this run">0/9 fired</span>
+    </h3>
     <div id="rules-list">
       <div class="rule-item" data-rule="1"><span class="rule-num">R1</span> Max 0.05 USDC / tx</div>
       <div class="rule-item" data-rule="2"><span class="rule-num">R2</span> Approved vendors only</div>
@@ -1228,6 +1333,9 @@ body { overflow: hidden; }
       <div class="rule-item" data-rule="9"><span class="rule-num">R9</span> Data API services only</div>
     </div>
     <div class="policy-id">Policy: fe91f282-246f-478b-b539-1873c3ad85bd</div>
+    <div id="policy-hash-line" class="policy-hash empty" title="policy_hash bound to every proof — confirms the compiled SMT-LIB2 artifact has not changed">
+      <span class="ph-label">policy_hash</span><span class="ph-val">—</span>
+    </div>
   </aside>
 
   </div><!-- /stage-shell -->
@@ -1244,7 +1352,8 @@ body { overflow: hidden; }
 <script>
 const { sleep, setProgress, demoFetch, highlightJson, animateCounter,
         createWalletTracker, highlightRules: _hlRules,
-        clearRuleHighlights: _clrRules, parseViolatedRules, truncAddr } = DemoShared;
+        clearRuleHighlights: _clrRules, resetFiredRules,
+        parseViolatedRules, truncAddr } = DemoShared;
 
 const JSON_CLASSES = { key: "json-key", str: "json-str", num: "json-num", bool: "json-bool", nul: "json-null" };
 function syntaxHighlight(obj) { return highlightJson(obj, JSON_CLASSES); }
@@ -1261,6 +1370,20 @@ function makeStepCard(type, label, html) {
 // In single-viewport stage mode, only the current scene is visible.
 // When a new scene is built, mark the previous one as exiting and remove
 // it from the DOM after the transition completes.
+// Per-scene Circle-infra callout content (B2). Keyed by the same id passed to
+// makeSceneShell. `idle` styles the callout purple to signal "no Circle infra
+// exercised here" (e.g. UNSAT scenes where no signature is produced).
+const SCENE_CIRCLE_INFRA = {
+  0:    { idle: true,  html: `Policy artifact only — no Circle infra exercised this scene.` },
+  1:    { idle: false, html: `<strong>Circle Gateway</strong> · plain x402 / EIP-3009 on Arc · <strong>no proof header</strong> — auth without authz.` },
+  2:    { idle: false, html: `<strong>Circle Gateway</strong> · EIP-3009 settled on Arc · <code>X-Preflight-Proof</code> header · on-Arc <code>NanopaymentAttestation</code> write.` },
+  "3a": { idle: true,  html: `Circle Gateway <strong>not invoked</strong> · <strong>0 signatures</strong> produced · UNSAT upstream of x402.` },
+  "3b": { idle: true,  html: `Circle Gateway <strong>not invoked</strong> · <strong>0 signatures</strong> produced · UNSAT upstream of x402.` },
+  "3c": { idle: true,  html: `Circle Gateway <strong>not invoked</strong> · <strong>0 signatures</strong> produced · UNSAT upstream of x402.` },
+  4:    { idle: true,  html: `Circle Gateway <strong>not invoked</strong> · <strong>0 signatures</strong> produced · multi-rule UNSAT (numeric + semantic).` },
+  5:    { idle: false, html: `ICME <code>/v1/verifyProof</code> public endpoint · stateless · single-use · no API key — anyone can re-verify any proof.` },
+};
+
 function makeSceneShell(id, title, desc) {
   const container = document.getElementById("scene-container");
   if (container) {
@@ -1271,6 +1394,10 @@ function makeSceneShell(id, title, desc) {
     });
   }
   markSceneActive(id);
+  const infra = SCENE_CIRCLE_INFRA[id];
+  const infraHtml = infra
+    ? `<div class="circle-infra-callout${infra.idle ? " idle" : ""}">${infra.html}</div>`
+    : "";
   const div = document.createElement("div");
   div.className = "scene";
   div.id = `scene-${id}`;
@@ -1280,8 +1407,32 @@ function makeSceneShell(id, title, desc) {
       <span class="scene-title">${title}</span>
     </div>
     <p class="scene-desc">${desc}</p>
+    ${infraHtml}
     <div class="steps-container"></div>`;
   return div;
+}
+
+// B3 — make policy_hash visible in the sidebar. Called from Scene 2 once
+// proofStatus.policy_hash is known, and again from Scene 5 if a verifier
+// returns one. Idempotent; only updates if the hash actually changes.
+function setPolicyHash(hash) {
+  const el = document.getElementById("policy-hash-line");
+  if (!el || !hash) return;
+  const valEl = el.querySelector(".ph-val");
+  if (!valEl) return;
+  const trimmed = String(hash).replace(/^0x/i, "");
+  const short = trimmed.length > 16 ? `0x${trimmed.slice(0, 10)}…${trimmed.slice(-6)}` : `0x${trimmed}`;
+  if (valEl.textContent === short) return;
+  valEl.textContent = short;
+  el.title = `policy_hash 0x${trimmed}`;
+  el.classList.remove("empty");
+}
+function clearPolicyHash() {
+  const el = document.getElementById("policy-hash-line");
+  if (!el) return;
+  const valEl = el.querySelector(".ph-val");
+  if (valEl) valEl.textContent = "—";
+  el.classList.add("empty");
 }
 
 // Scene strip — small dots along the bottom showing scene progress.
@@ -1376,8 +1527,12 @@ async function waitForProof(proofId, stepCard) {
   return proofData;
 }
 
-const STEP_DELAY = 500;
-const SCENE_DELAY = 1000;
+// Pacing — tuned so a full run lands around the 4-minute mark for the
+// recorded walkthrough. STEP_DELAY is the pause between cards inside a
+// scene; SCENE_DELAY is the pause between scenes. The proof-generation
+// polls in scene 5 add their own wall-clock time on top of these.
+const STEP_DELAY = 2400;
+const SCENE_DELAY = 4000;
 let demoRunning = false;
 
 let stats = { unprotected: 0, verified: 0, blocked: 0, proofs: 0 };
@@ -1401,6 +1556,8 @@ async function runDemo() {
   container.innerHTML = "";
   summary.classList.remove("visible");
   clearRuleHighlights();
+  resetFiredRules();
+  clearPolicyHash();
   resetArrows();
   setProgress(0);
   wallet.reset();
@@ -1555,6 +1712,7 @@ Rule 9: Only payments for data API services (weather, market data, risk).     [s
       const waitCard = makeStepCard("info", "ZK Proof Generation", "Generating ZK proof&hellip; 0s");
       appendStep(s2, waitCard);
       const proofStatus = await waitForProof(scene2Check.proof_id, waitCard);
+      if (proofStatus && proofStatus.policy_hash) setPolicyHash(proofStatus.policy_hash);
       setProgress(50);
       await sleep(STEP_DELAY);
 
@@ -1878,6 +2036,7 @@ ${blockNumber ? `<span class="http-header-name">block:</span> <span class="http-
       }
 
       if (verifyData.ok) {
+        if (verifyData.policy_hash) setPolicyHash(verifyData.policy_hash);
         const isConsumed = verifyData.already_consumed;
         const claimed = verifyData.claimed_result;
         const isSatProof = claimed === "SAT";
@@ -1911,39 +2070,39 @@ ${blockNumber ? `<span class="http-header-name">block:</span> <span class="http-
   <div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--green)">On-Arc attestation &mdash; settlement is bound to its proof, publicly auditable on Arc Explorer</div>
 </div>
 <div class="callout green">The ZK proof bridges trust between two chains: formal verification happens on Base, payment executes on Arc, and the seller anchors the binding on Arc. The proof_id is the connective tissue \u2014 and Arc is where the binding becomes public record.</div>`));
+  }
 
-    // Auto-open Arc Explorer at the end of the demo so a screen recording
-    // shows the on-chain artifact resolving in the public block explorer.
-    // We open two pages: the specific attestation tx (proves THIS run wrote
-    // on-chain) and the contract address (shows accumulated history).
+  // ────────────────────────────────────────────────────────────────
+  // End-of-demo Arc Explorer handoff. Rendered UNCONDITIONALLY at the
+  // end of Scene 5 (even if no proofs were collected) so the presenter
+  // always has the click-to-explorer affordance.
+  // ────────────────────────────────────────────────────────────────
+  {
     const CONTRACT_ADDRESS = "0x76ce30319c561beaa6dcf936017fcbb1e84b18b1";
-    const EXPLORER_BASE = "https://explorer.testnet.arc.network";
+    const EXPLORER_BASE = "https://testnet.arcscan.app";
     const txUrl = lastAttestation && lastAttestation.txHash
       ? (lastAttestation.explorerUrl || `${EXPLORER_BASE}/tx/${lastAttestation.txHash}`)
       : null;
     const contractUrl = `${EXPLORER_BASE}/address/${(lastAttestation && lastAttestation.contract) || CONTRACT_ADDRESS}`;
+    const primaryUrl = txUrl || contractUrl;
+    const primaryLabel = txUrl ? "Open this run's attestation on Arc Explorer" : "Open NanopaymentAttestation on Arc Explorer";
 
-    const openCard = makeStepCard("info", "Opening Arc Explorer \u2014 Public On-Chain Record",
-      `<div class="callout cyan">In <span id="arc-explorer-countdown">3</span>s this demo will open Arc Explorer in new tabs so you can see the attestation resolve on a public block explorer with no ICME access required:
-<div style="margin-top:0.5rem;display:flex;flex-direction:column;gap:0.25rem;font-family:var(--font-mono);font-size:0.72rem">
-${txUrl ? `<div>&rarr; <a href="${txUrl}" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:underline">Attestation tx (this run)</a></div>` : ''}
-<div>&rarr; <a href="${contractUrl}" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:underline">NanopaymentAttestation contract (all runs)</a></div>
+    const openCard = makeStepCard("success", "On-Arc Record \u2014 Verify on Arc Explorer",
+      `<div class="callout cyan">The attestation written in Scene 2 is now a public on-chain record on Arc Testnet. Click the button to view it:
+<div style="margin-top:0.75rem">
+  <a id="arc-explorer-primary" href="${primaryUrl}" target="_blank" rel="noopener"
+     style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.4rem 0.85rem;border-radius:6px;background:transparent;color:var(--cyan);font-family:var(--font-mono);font-size:0.72rem;font-weight:500;text-decoration:none;letter-spacing:0.3px;border:1px solid var(--cyan)">
+    ${primaryLabel} &rarr;
+  </a>
 </div>
-<div style="margin-top:0.5rem;font-size:0.72rem;color:var(--muted)">If your browser blocks the popup, click the links above.</div></div>`);
+${txUrl ? `<div style="margin-top:0.6rem;font-family:var(--font-mono);font-size:0.7rem">
+  <a href="${contractUrl}" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:underline">also: contract page (all runs)</a>
+</div>` : ''}</div>`);
     appendStep(s5, openCard);
-
-    // Count down visibly, then open the tabs.
-    for (let i = 3; i >= 1; i--) {
-      const cd = openCard.querySelector("#arc-explorer-countdown");
-      if (cd) cd.textContent = String(i);
-      await sleep(1000);
-    }
-    try {
-      if (txUrl) window.open(txUrl, "_blank", "noopener");
-      window.open(contractUrl, "_blank", "noopener");
-    } catch (e) {
-      // Popup blocked — links above remain clickable.
-    }
+    // Make sure the button is in view when scene 5 finishes.
+    await sleep(50);
+    const btn = document.getElementById("arc-explorer-primary");
+    if (btn) btn.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -2006,6 +2165,32 @@ ${txUrl ? `<div>&rarr; <a href="${txUrl}" target="_blank" rel="noopener" style="
   animateCounter(document.getElementById("stat-verified"), stats.verified, 600);
   animateCounter(document.getElementById("stat-blocked"), stats.blocked, 600);
   animateCounter(document.getElementById("stat-proofs"), stats.proofs, 800);
+
+  // Populate the summary-pane Arc Explorer CTA with this run's attestation
+  // tx if we captured one in Scene 2; otherwise fall back to the contract
+  // address page (still proves the contract exists and shows all runs).
+  {
+    const CONTRACT_ADDRESS = "0x76ce30319c561beaa6dcf936017fcbb1e84b18b1";
+    const EXPLORER_BASE = "https://testnet.arcscan.app";
+    const txUrl = lastAttestation && lastAttestation.txHash
+      ? (lastAttestation.explorerUrl || `${EXPLORER_BASE}/tx/${lastAttestation.txHash}`)
+      : null;
+    const contractUrl = `${EXPLORER_BASE}/address/${(lastAttestation && lastAttestation.contract) || CONTRACT_ADDRESS}`;
+    const link = document.getElementById("summary-arc-link");
+    const label = document.getElementById("summary-arc-label");
+    const sub = document.getElementById("summary-arc-sub");
+    if (link && label) {
+      link.href = txUrl || contractUrl;
+      label.textContent = txUrl
+        ? "Open this run's attestation on Arc Explorer"
+        : "Open NanopaymentAttestation on Arc Explorer";
+      if (sub) {
+        sub.innerHTML = txUrl
+          ? `also: <a href="${contractUrl}" target="_blank" rel="noopener" style="color:var(--cyan);text-decoration:underline">contract page (all runs)</a>`
+          : "";
+      }
+    }
+  }
 
   await sleep(600);
   setActivePane("summary");
@@ -2161,7 +2346,7 @@ app.<span class="ci">get</span>(<span class="cs">"/api/risk"</span>,    gateway.
 <span class="ch">    args: [<span class="ci">keccak256</span>(<span class="ci">toHex</span>(proofId)), <span class="ci">keccak256</span>(<span class="ci">toHex</span>(policyHash)),</span>
 <span class="ch">           paymentTxHash, result === <span class="cs">"SAT"</span> ? <span class="cn">1</span> : <span class="cn">0</span>],</span>
 <span class="ch">  });</span>
-  <span class="cc">// txHash → explorer.testnet.arc.network/tx/0x...</span>
+  <span class="cc">// txHash → testnet.arcscan.app/tx/0x...</span>
   <span class="ck">return</span> { attestationTxHash: txHash, contract: <span class="ci">CONTRACT</span> };
 }
 
@@ -2215,8 +2400,6 @@ function wtRender() {
   document.getElementById("wt-note-body").innerHTML = step.note;
   document.getElementById("wt-circle-tag").innerHTML = step.tags
     .map(t => `<span class="wt-tag ${t.cls}">${t.label}</span>`).join("");
-  document.getElementById("wt-status").textContent =
-    `Step ${wtIndex + 1} of ${WALKTHROUGH_STEPS.length}`;
 
   // Progress dots
   const progEl = document.getElementById("wt-progress");
@@ -2225,9 +2408,6 @@ function wtRender() {
               : i === wtIndex ? "wt-dot active" : "wt-dot";
     return `<span class="${cls}" onclick="wtJump(${i})">${i + 1}</span>`;
   }).join("");
-
-  document.getElementById("wt-prev").disabled = wtIndex === 0;
-  document.getElementById("wt-next").disabled = wtIndex >= WALKTHROUGH_STEPS.length - 1;
 }
 
 function wtClearTimer() {
@@ -2247,26 +2427,6 @@ function wtScheduleAuto() {
   }, WT_AUTO_MS);
 }
 
-function wtNext() {
-  wtClearTimer();
-  if (wtIndex < WALKTHROUGH_STEPS.length - 1) {
-    wtIndex++;
-    wtRender();
-    wtScheduleAuto();
-  } else {
-    wtFinishAndStartDemo();
-  }
-}
-
-function wtPrev() {
-  wtClearTimer();
-  if (wtIndex > 0) {
-    wtIndex--;
-    wtRender();
-    wtScheduleAuto();
-  }
-}
-
 function wtJump(i) {
   wtClearTimer();
   wtIndex = i;
@@ -2274,16 +2434,9 @@ function wtJump(i) {
   wtScheduleAuto();
 }
 
-function wtSkipToDemo() {
-  wtClearTimer();
-  wtFinishAndStartDemo();
-}
-
 function wtFinishAndStartDemo() {
   wtClearTimer();
   document.getElementById("wt-handoff").classList.add("visible");
-  document.getElementById("wt-prev").disabled = true;
-  document.getElementById("wt-next").disabled = true;
   setTimeout(() => {
     setActivePane("demo");
     runDemo();

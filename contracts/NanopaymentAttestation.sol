@@ -13,7 +13,7 @@ pragma solidity ^0.8.20;
 ///
 /// @dev    Deployed on Arc Testnet (chainId 5042002):
 ///         0x76ce30319c561beaa6dcf936017fcbb1e84b18b1
-///         Explorer: https://explorer.testnet.arc.network/address/0x76ce30319c561beaa6dcf936017fcbb1e84b18b1
+///         Explorer: https://testnet.arcscan.app/address/0x76ce30319c561beaa6dcf936017fcbb1e84b18b1
 contract NanopaymentAttestation {
 
     /// @dev Result codes for the off-chain Preflight check.

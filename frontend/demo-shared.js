@@ -103,17 +103,43 @@
     };
   };
 
+  // Cumulative set of rule numbers that have fired during the current demo run.
+  // Persists across scenes; reset by resetFiredRules() at the top of runDemo.
+  ns._firedRules = new Set();
+  ns._firedTotal = 9;
+
+  function updateFiredCounter() {
+    const el = document.getElementById("rules-fired-counter");
+    if (!el) return;
+    const n = ns._firedRules.size;
+    el.textContent = `${n}/${ns._firedTotal} fired`;
+    el.classList.toggle("has-fired", n > 0);
+  }
+
   ns.highlightRules = function highlightRules(rules, mode, selector, baseClass) {
     rules.forEach(r => {
       const el = document.querySelector(`${selector}[data-rule="${r}"]`);
-      if (el) el.className = `${baseClass} ${mode}`;
+      if (el) {
+        // Re-trigger CSS animation by clearing the className first, forcing
+        // a reflow, then applying the active class.
+        el.className = baseClass;
+        void el.offsetWidth;
+        el.className = `${baseClass} ${mode}`;
+      }
+      if (typeof r === "number") ns._firedRules.add(r);
     });
+    updateFiredCounter();
   };
 
   ns.clearRuleHighlights = function clearRuleHighlights(selector, baseClass) {
     document.querySelectorAll(selector).forEach(el => {
       el.className = baseClass;
     });
+  };
+
+  ns.resetFiredRules = function resetFiredRules() {
+    ns._firedRules.clear();
+    updateFiredCounter();
   };
 
   // Maps the free-text `detail` field returned by Preflight checkIt onto

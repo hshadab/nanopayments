@@ -7,6 +7,11 @@ import type { ExtractedFields, PaymentIntent } from "../types.js";
 import { PreflightClient } from "../preflight/client.js";
 import { describePaymentAction } from "../preflight/policy.js";
 import {
+  getAttestation,
+  isAttestationOnchain,
+} from "../attestation/arc-attestor.js";
+import { arcTestnet } from "../attestation/arc-chain.js";
+import {
   printBanner,
   printSceneHeader,
   printStepHeader,
@@ -16,9 +21,13 @@ import {
   printPreflightCheck,
   printPolicyCompilation,
   printDifferentiatorTable,
+  printAttestationLookup,
   printSummary,
   type DifferentiatorRow,
 } from "./verified-dashboard.js";
+
+const SCENE_PAUSE_MS = 3000;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const LEGITIMATE_INTENT: PaymentIntent = {
   amount: "0.001",
@@ -134,7 +143,11 @@ const stats = {
   blockedPayments: 0,
   proofsGenerated: 0,
   proofsVerified: 0,
+  attestationsWritten: 0,
+  attestationsReadBack: 0,
 };
+
+let scene2ProofId: string | undefined;
 
 const collectedProofIds: { label: string; proofId: string }[] = [];
 const differentiatorRows: DifferentiatorRow[] = [];
@@ -182,6 +195,7 @@ async function main() {
       "Turnkey policies use a structured JSON DSL.\n" +
       "Preflight policies are written in English by a human, formally verified."
   );
+  await sleep(SCENE_PAUSE_MS);
   printPolicyCompilation(config.icmePolicyId);
   console.log(
     "  This compilation runs once via `npm run policy:create` and costs $3."
@@ -205,6 +219,7 @@ async function main() {
       "The TEE checks authentication (valid signature?) but NOT authorization\n" +
       "(should this payment happen?)."
   );
+  await sleep(SCENE_PAUSE_MS);
 
   printStepHeader("Paying for weather data without proof...");
   const result = await payForResource(`${config.sellerBaseUrl}/api/weather`);
@@ -222,8 +237,13 @@ async function main() {
     "The Fix (happy path)",
     "Legitimate intent. Preflight returns SAT.\n" +
       "ZK proof is attached to the x402 payment via `X-Preflight-Proof`.\n" +
-      "Seller verifies the proof BEFORE accepting the Nanopayment."
+      "Seller verifies the proof BEFORE accepting the Nanopayment.\n" +
+      "After settlement, the seller writes a hash-only attestation on Arc:\n" +
+      "  attest(proofIdHash, policyHash, paymentTxHash, SAT)\n" +
+      "→ single-use, no PII, anyone can read it back from Arc Explorer\n" +
+      "  without an API key, an ICME account, or buyer cooperation."
   );
+  await sleep(SCENE_PAUSE_MS);
 
   printStepHeader("Preflight verify + pay for weather data...");
   const verifiedResult = await verifyAndPay(LEGITIMATE_INTENT);
@@ -232,10 +252,20 @@ async function main() {
   if (verifiedResult.allowed) stats.verifiedPayments++;
   if (verifiedResult.proofId) {
     stats.proofsGenerated++;
+    scene2ProofId = verifiedResult.proofId;
     collectedProofIds.push({
       label: "Scene 2 — Legitimate payment (SAT)",
       proofId: verifiedResult.proofId,
     });
+  }
+
+  // The seller returns the attestation receipt inline at data._verification.attestation.
+  // If it's present and on-chain, count it for the summary.
+  const data = verifiedResult.payment?.data as
+    | { _verification?: { attestation?: { mode?: string } } }
+    | undefined;
+  if (data?._verification?.attestation?.mode === "onchain") {
+    stats.attestationsWritten++;
   }
 
   differentiatorRows.push({
@@ -262,6 +292,7 @@ async function main() {
       "purpose field, which lives in the agent's NL reasoning and is\n" +
       "discarded by the time the signing request is built."
   );
+  await sleep(SCENE_PAUSE_MS);
   printStepHeader("Preflight verify for purpose-mismatch intent...");
   await runPreflightOnly(preflightClient, PURPOSE_MISMATCH_INTENT, PURPOSE_MISMATCH_SIMULATED);
 
@@ -286,6 +317,7 @@ async function main() {
       "Numeric and structural rules pass. Preflight extracts\n" +
       "urgencyTacticDetected = true from the NL purpose and fires Rule 4."
   );
+  await sleep(SCENE_PAUSE_MS);
   printStepHeader("Preflight verify for urgency-tactic intent...");
   await runPreflightOnly(preflightClient, URGENCY_INTENT, URGENCY_SIMULATED);
 
@@ -311,6 +343,7 @@ async function main() {
       "Preflight intercepts BEFORE the EIP-3009 struct is built, extracts\n" +
       "overrideAttempt = true, and fires Rule 7. No signature is created."
   );
+  await sleep(SCENE_PAUSE_MS);
   printStepHeader("Preflight verify for override-injection intent...");
   await runPreflightOnly(preflightClient, OVERRIDE_INTENT, OVERRIDE_SIMULATED);
 
@@ -335,6 +368,7 @@ async function main() {
       "would block this independently. Preflight cites multiple rules and\n" +
       "still emits a proof, so the principal can audit which clauses fired."
   );
+  await sleep(SCENE_PAUSE_MS);
   printStepHeader("Preflight verify for direct attack...");
   await runPreflightOnly(preflightClient, DIRECT_ATTACK_INTENT, DIRECT_ATTACK_SIMULATED);
 
@@ -357,6 +391,7 @@ async function main() {
       "Anyone can verify these proofs — no API key, no policy access needed.\n" +
         "Just the proof_id and a single POST to /v1/verifyProof."
     );
+    await sleep(SCENE_PAUSE_MS);
 
     for (const { label, proofId } of collectedProofIds) {
       printStepHeader(`Verifying: ${label}`);
@@ -390,6 +425,41 @@ async function main() {
         }
       }
       stats.proofsVerified++;
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Scene 6 — Read the attestation back from Arc, no API key required.
+  // ──────────────────────────────────────────────────────────────────────
+  if (scene2ProofId && isAttestationOnchain()) {
+    printSceneHeader(
+      6,
+      "Read the attestation back from Arc",
+      "Scene 2 wrote attest(proofIdHash, policyHash, paymentTxHash, SAT) on\n" +
+        "Arc Testnet. Now a third party — with only the proofId and a public\n" +
+        "Arc RPC — calls getAttestation() and gets the receipt back. No API\n" +
+        "key, no ICME account, no buyer cooperation. This is the public\n" +
+        "audit trail the rest of the demo has been building toward."
+    );
+    await sleep(SCENE_PAUSE_MS);
+
+    printStepHeader("Reading attestation from Arc contract...");
+    try {
+      const record = await getAttestation(scene2ProofId);
+      const contractAddr = (process.env.ATTESTATION_CONTRACT_ADDRESS || "") as
+        | `0x${string}`
+        | "";
+      const explorerBase = arcTestnet.blockExplorers?.default?.url || "";
+      printAttestationLookup({
+        proofId: scene2ProofId,
+        record,
+        contractAddress: contractAddr || undefined,
+        explorerBaseUrl: explorerBase,
+      });
+      if (record) stats.attestationsReadBack++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.log(`  Attestation lookup failed: ${msg}\n`);
     }
   }
 

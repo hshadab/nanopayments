@@ -125,10 +125,72 @@ export function printVerifiedPayment(result: VerifiedPayFlowResult): void {
     if (result.paymentMs) {
       console.log(chalk.gray(`      Time: ${result.paymentMs}ms`));
     }
+
+    // Attestation block, if the seller wrote one inline.
+    const attestation = extractAttestation(result.payment.data);
+    if (attestation) {
+      console.log();
+      console.log(chalk.gray("    On-Arc attestation:"));
+      const tag =
+        attestation.mode === "onchain"
+          ? chalk.green("ON-CHAIN")
+          : chalk.yellow("SIMULATED");
+      console.log(`      Mode:        ${tag}`);
+      console.log(chalk.gray(`      Contract:    ${attestation.contract}`));
+      console.log(chalk.gray(`      Tx hash:     ${attestation.tx_hash}`));
+      console.log(
+        chalk.gray(
+          `      Block:       ${attestation.block_number} (chain ${attestation.chain_id})`
+        )
+      );
+      console.log(chalk.gray(`      Proof hash:  ${attestation.proof_id_hash}`));
+      if (attestation.explorer_url) {
+        console.log(chalk.cyan(`      Explorer:    ${attestation.explorer_url}`));
+      }
+      console.log(
+        chalk.gray(
+          "      Record:      attest(proofIdHash, policyHash, paymentTxHash, SAT)"
+        )
+      );
+      console.log(
+        chalk.gray(
+          "      Anyone can read this back from Arc — no API key, no ICME account."
+        )
+      );
+    }
   } else if (!result.allowed) {
     console.log(chalk.red("    Payment execution: BLOCKED — no payment signed"));
   }
   console.log();
+}
+
+interface AttestationInline {
+  mode: "onchain" | "simulated";
+  tx_hash: string;
+  contract: string;
+  chain_id: number;
+  block_number: string;
+  explorer_url: string;
+  proof_id_hash: string;
+}
+
+function extractAttestation(data: unknown): AttestationInline | null {
+  if (!data || typeof data !== "object") return null;
+  const ver = (data as Record<string, unknown>)._verification;
+  if (!ver || typeof ver !== "object") return null;
+  const att = (ver as Record<string, unknown>).attestation;
+  if (!att || typeof att !== "object") return null;
+  const a = att as Record<string, unknown>;
+  if (typeof a.mode !== "string" || typeof a.tx_hash !== "string") return null;
+  return {
+    mode: a.mode as "onchain" | "simulated",
+    tx_hash: String(a.tx_hash),
+    contract: String(a.contract ?? ""),
+    chain_id: Number(a.chain_id ?? 0),
+    block_number: String(a.block_number ?? ""),
+    explorer_url: String(a.explorer_url ?? ""),
+    proof_id_hash: String(a.proof_id_hash ?? ""),
+  };
 }
 
 export function printProofVerification(
@@ -404,6 +466,8 @@ export function printSummary(stats: {
   blockedPayments: number;
   proofsGenerated: number;
   proofsVerified: number;
+  attestationsWritten?: number;
+  attestationsReadBack?: number;
 }): void {
   console.log();
   console.log(chalk.cyan(LINE));
@@ -435,6 +499,21 @@ export function printSummary(stats: {
       `  Proofs independently verified: ${stats.proofsVerified}`
     )
   );
+  if (
+    typeof stats.attestationsWritten === "number" ||
+    typeof stats.attestationsReadBack === "number"
+  ) {
+    console.log(
+      chalk.cyan(
+        `  On-Arc attestations written:  ${stats.attestationsWritten ?? 0}  (hash-only, browsable in Arc Explorer)`
+      )
+    );
+    console.log(
+      chalk.cyan(
+        `  Attestations read back on-chain: ${stats.attestationsReadBack ?? 0}  (no API key, no ICME account)`
+      )
+    );
+  }
   console.log();
   console.log(chalk.cyan(THIN));
   console.log(
@@ -449,4 +528,70 @@ export function printSummary(stats: {
 
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max - 3) + "..." : s;
+}
+
+/**
+ * Scene 6 — pretty-print the attestation record fetched from the on-chain
+ * contract via getAttestation(proofId). Anyone with the proofId and an Arc
+ * RPC can do this; no API key, no ICME account, no buyer cooperation.
+ */
+export function printAttestationLookup(opts: {
+  proofId: string;
+  record:
+    | {
+        proofId: `0x${string}`;
+        policyHash: `0x${string}`;
+        paymentTxHash: `0x${string}`;
+        result: "SAT" | "UNSAT";
+        seller: `0x${string}`;
+        timestamp: number;
+      }
+    | null;
+  contractAddress?: string;
+  explorerBaseUrl?: string;
+}): void {
+  console.log(chalk.green("  [Attestation Lookup — third-party view]"));
+  console.log(chalk.gray(`    Calling getAttestation(keccak256(proofId)) on Arc...`));
+  console.log(chalk.gray(`    Proof ID: ${opts.proofId}`));
+  if (opts.contractAddress) {
+    console.log(chalk.gray(`    Contract: ${opts.contractAddress}`));
+  }
+  console.log();
+
+  if (!opts.record) {
+    console.log(
+      chalk.yellow(
+        "    No attestation found on-chain for this proofId (timestamp = 0)."
+      )
+    );
+    console.log();
+    return;
+  }
+
+  const r = opts.record;
+  const when = new Date(r.timestamp * 1000).toISOString();
+  console.log(chalk.gray("    Record returned by the contract:"));
+  console.log(chalk.gray(`      proofIdHash:   ${r.proofId}`));
+  console.log(chalk.gray(`      policyHash:    ${r.policyHash}`));
+  console.log(chalk.gray(`      paymentTxHash: ${r.paymentTxHash}`));
+  const resultTag =
+    r.result === "SAT" ? chalk.green("SAT") : chalk.red("UNSAT");
+  console.log(`      result:        ${resultTag}`);
+  console.log(chalk.gray(`      seller:        ${r.seller}`));
+  console.log(chalk.gray(`      timestamp:     ${r.timestamp}  (${when})`));
+
+  if (opts.explorerBaseUrl && opts.contractAddress) {
+    console.log();
+    console.log(
+      chalk.cyan(
+        `    Explorer: ${opts.explorerBaseUrl}/address/${opts.contractAddress}`
+      )
+    );
+  }
+  console.log(
+    chalk.gray(
+      "    This is the receipt — Preflight-authorized, Arc-settled, publicly verifiable."
+    )
+  );
+  console.log();
 }
