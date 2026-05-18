@@ -52,14 +52,14 @@ That's the gap. Authentication without authorization.
 
 ## How we close it
 
-We attach a ZK proof of policy compliance to every payment. The proof travels WITH the x402 payment in a custom HTTP header (`X-Preflight-Proof`), and the seller verifies it before accepting.
+We bind a ZK proof of policy compliance to every payment. The proof itself does not ride the x402 protocol — the buyer conveys a `proof_id` to the seller at the application layer (request body, non-x402 HTTP header, or the x402 v2 `PaymentPayload.extensions` field), and the seller verifies it via ICME's public endpoint before accepting the payment.
 
 Here's what happens step by step:
 
 1. **Agent wants to pay** for weather data ($0.001 USDC).
-2. **Preflight checks the intent** — "Transfer 0.001 USDC to WeatherNode for weather data" is sent to the ICME API, which runs it through a formal solver (Z3 + AWS Automated Reasoning) against a compiled policy. Result: SAT (all 9 rules satisfied). A ZK proof is generated. Cost: $0.01.
-3. **Proof gets attached** — the proof ID is packed into an `X-Preflight-Proof` header.
-4. **x402 payment fires** — Circle's GatewayClient sends the payment signature AND the proof header together.
+2. **Preflight checks the intent** — "Transfer 0.001 USDC to WeatherNode for weather data" is sent to the ICME API, which runs a three-stage pipeline: an LLM extractor produces structured fields from the action text, an SMT solver verifies the compiled policy against those fields, and a consensus rule (fail-closed on UNSAT, reject on ambiguous extraction) gates the result. Result: SAT (all 9 rules satisfied). A ZK proof is generated. Cost: $0.01.
+3. **Proof identifier is conveyed** — the buyer attaches the `proof_id` to the request. This repo uses a non-x402 sidecar header (`X-Preflight-Proof`) as one practical option; alternatives are a request-body field or the x402 v2 `PaymentPayload.extensions` field. See [Proof transport](#proof-transport-three-options) below.
+4. **x402 payment fires** — Circle's GatewayClient sends the EIP-3009 payment signature; the proof identifier travels alongside via the chosen transport.
 5. **Seller checks the proof** — before accepting the Nanopayment, the seller calls ICME's public `verifyProof` endpoint. No API key needed. If the proof is valid and says SAT, the payment goes through. If not, it's rejected.
 
 Now imagine a prompt injection tells the agent to send 0.5 USDC to an attacker wallet. Step 2 returns UNSAT — amount exceeds limit, recipient not in allowlist, urgency tactic detected. The payment is never signed. No EIP-3009 authorization ever exists.
@@ -69,8 +69,8 @@ Now imagine a prompt injection tells the agent to send 0.5 USDC to an attacker w
 Circle announced Agent Stack on Nov 11, 2025. The announcement framed three legs: **Agent Wallets** (signing-time policy), **Nanopayments / x402 on Arc** (settlement rail), and **Agent Marketplace** (the discovery and trust surface where agents transact). Preflight composes with all three; it does not compete with any of them.
 
 - **Agent Wallets:** Preflight runs upstream of the wallet. The wallet still enforces its caps and allowlists at signing time. The proof adds the semantic check (intent, urgency, purpose) the wallet can't express. Two independent defenses on one payment.
-- **Nanopayments / x402:** The proof rides as `X-Preflight-Proof` alongside `Payment-Signature`. No SDK fork. Existing sellers verify in ~10 lines of Express. The settlement leg of the stack is unchanged.
-- **Agent Marketplace:** Listings can opt into a `proof-verified` flag — sellers reject payments without a valid `X-Preflight-Proof`. The `proof_id` is the public trust primitive: a buyer doesn't need to share its policy with the seller, and the seller doesn't need to trust the buyer's wallet config. The marketplace gets a counterparty-verifiable signal that "this agent's intent satisfied a formal policy" without seeing either side's internals.
+- **Nanopayments / x402:** The proof is carried alongside the x402 payment via one of three application-layer transports (this repo uses a non-x402 sidecar header `X-Preflight-Proof`; alternatives are a request-body field or the x402 v2 `PaymentPayload.extensions` field). No SDK fork. Existing sellers verify in ~10 lines of Express. The settlement leg of the stack is unchanged.
+- **Agent Marketplace:** Listings can opt into a `proof-verified` flag — sellers reject payments without a valid `proof_id`. The `proof_id` is the public trust primitive: a buyer doesn't need to share its policy with the seller, and the seller doesn't need to trust the buyer's wallet config. The marketplace gets a counterparty-verifiable signal that "this agent's intent satisfied a formal policy" without seeing either side's internals.
 
 Preflight composes with it; it does not compete.
 
@@ -95,7 +95,7 @@ flowchart TB
 
     subgraph INTENT["INTENT layer (Preflight, on Base mainnet)"]
         EX[1. Extract<br/>NL intent to structured fields<br/>LLM-based extractor]
-        VR[2. Verify<br/>fields x policy to SAT/UNSAT<br/>Z3 + AWS Automated Reasoning]
+        VR[2. Verify<br/>fields x policy to SAT/UNSAT<br/>SMT solver + consensus]
         PR[3. Prove<br/>emit ZK receipt<br/>JOLT-Atlas]
         EX --> VR --> PR
     end
@@ -122,12 +122,12 @@ flowchart TB
     CW --> X
     TK --> X
     EOA --> X
-    X -- "EIP-3009 + X-Preflight-Proof" --> V
+    X -- "EIP-3009 + proof_id (sidecar)" --> V
 ```
 
-Preflight sits **above** the signing layer. Whichever signing engine the buyer uses — Circle Agent Wallet, Turnkey, or a plain EOA — the same `X-Preflight-Proof` header travels with the x402 payment and is verified by the seller. The signing engine and Preflight enforce **independent** constraints: one over the transaction-shape (caps, allowlists, consensus), one over the agent's natural-language intent.
+Preflight sits **above** the signing layer. Whichever signing engine the buyer uses — Circle Agent Wallet, Turnkey, or a plain EOA — the same `proof_id` travels alongside the x402 payment and is verified by the seller. The signing engine and Preflight enforce **independent** constraints: one over the transaction-shape (caps, allowlists, consensus), one over the agent's natural-language intent.
 
-The INTENT layer is a named three-step pipeline: **Extract** (LLM → structured fields, has known failure modes) → **Verify** (Z3 + AR over the extracted fields, does not fail probabilistically) → **Prove** (JOLT-Atlas binds the result to a `policy_hash`). The LLM does extraction, not enforcement. Formal methods enforce.
+The INTENT layer is a named three-step pipeline: **Extract** (LLM → structured fields, has known failure modes) → **Verify** (SMT solver + consensus rule over the extracted fields, fails closed on UNSAT and rejects on ambiguous extraction) → **Prove** (JOLT-Atlas binds the result to a `policy_hash`). The LLM does extraction, not enforcement. Formal methods enforce.
 
 **Drop-in claim.** Adopting Preflight requires **no changes** to your existing Circle Agent Wallet or Turnkey configuration. The proof rides as an HTTP header alongside the existing x402 payment signature. Sellers verify with one public endpoint call (`POST /v1/verifyProof`, no API key). Existing Nanopayments sellers integrate in ~10 lines of Express middleware; existing buyers swap `client.pay()` for `verifyAndPay()`.
 
@@ -145,10 +145,10 @@ Preflight adds one primitive the stack is missing: a counterparty-verifiable pro
 
 ```mermaid
 flowchart LR
-    A[Agent<br/>intent in NL] -->|POST /v1/checkIt| P[Preflight on Base<br/>Z3 + AR + JOLT-Atlas]
+    A[Agent<br/>intent in NL] -->|POST /v1/checkIt| P[Preflight on Base<br/>LLM extractor + SMT + JOLT-Atlas]
     P -->|SAT + proof_id| A
     P -->|UNSAT + proof_id| X[Blocked<br/>no signature]
-    A -->|GatewayClient.pay<br/>+ X-Preflight-Proof| G[Seller on Arc Testnet]
+    A -->|GatewayClient.pay<br/>+ proof_id sidecar| G[Seller on Arc Testnet]
     G -->|POST /v1/verifyProof| P
     P -->|valid: true| G
     G -->|200 OK + data| A
@@ -238,7 +238,7 @@ The three engines occupy different points in the stack. Circle Agent Wallet and 
 | Reason over agent's natural-language *purpose* | — | — | ✓ |
 | Block on urgency / emotional / authority framing | — | — | ✓ |
 | Block on prompt-injected policy override | — | — | ✓ |
-| Formal verification (Z3 + AR dual solver) per check | — | — | ✓ |
+| Formal verification (SMT solver + consensus rule) per check | — | — | ✓ |
 | Counterparty-verifiable ZK proof per decision | — | — | ✓ |
 | Content-addressed `policy_hash` bound to every proof | — | — | ✓ |
 | Where it enforces | At wallet, signing time | At signer, signing time | At *intent*, before any signing |
@@ -269,7 +269,7 @@ Short answer: no, because Turnkey policies evaluate over the structured fields o
 
 There is no Turnkey policy expression that can reach it. The Turnkey policy language is explicit on this: no regex, no pattern matching, no NLP, no semantic analysis. Even if it had pattern matching, the string isn't *on the request*.
 
-Preflight intercepts the action *before* it is reduced to an EIP-3009 struct, runs LLM-based field extraction (`urgencyTacticDetected`, `overrideAttempt`, `serviceCategory`) inside a formally-verified Z3+AR pipeline, and emits a proof bound to the extracted fields. That is the architectural difference, and it is what makes Scenes 3a/3b/3c demonstrably outside the reach of any signing-layer policy engine — Turnkey or otherwise.
+Preflight intercepts the action *before* it is reduced to an EIP-3009 struct, runs LLM-based field extraction (`urgencyTacticDetected`, `overrideAttempt`, `serviceCategory`) inside a formally-verified SMT pipeline with a consensus rule that fails closed on UNSAT, and emits a proof bound to the extracted fields. That is the architectural difference, and it is what makes Scenes 3a/3b/3c demonstrably outside the reach of any signing-layer policy engine — Turnkey or otherwise.
 
 ## ICME Preflight API (what we're calling)
 
@@ -288,29 +288,30 @@ Both `makeRules` and `checkIt` return **SSE streams**, not plain JSON. Each line
 {
   "step": "done",
   "result": "SAT",
-  "z3_result": "SAT",
-  "ar_result": "SAT",
-  "llm_result": "SAT",
+  "extractor_result": "SAT",
+  "smt_result": "SAT",
+  "consensus": "ALLOW",
   "check_id": "uuid",
-  "zk_proof_id": "uuid",
+  "proof_id": "uuid",
+  "policy_hash": "0x...",
   "detail": "Satisfiable",
-  "verification_time_ms": 6000,
-  "extracted": { "transferAmount": 0.001, "urgencyTacticDetected": false, "..." : "..." }
+  "extracted": { "transferAmount": 0.001, "urgencyTacticDetected": false, "...": "..." }
 }
 ```
+
+The `extractor_result` reports what the LLM extractor produced from the action text. The `smt_result` reports the SMT solver's verdict against the compiled policy. The `consensus` field is the final decision after the consensus rule applies (fail closed on UNSAT, reject on ambiguous extraction).
 
 **verifyProof response (plain JSON):**
 ```json
 {
   "valid": true,
-  "result": "SAT",
-  "policy_hash": "hex-string",
-  "verify_ms": 400,
-  "used": true,
-  "proof_bytes_len": 93418,
-  "trace_length": 1048576
+  "claimed_result": "SAT",
+  "policy_hash": "0x...",
+  "used": true
 }
 ```
+
+`policy_hash` is the content-addressed fingerprint of the compiled SMT policy the action was checked against. A regulator or counterparty receiving a `proof_id` can call `verifyProof`, read the `policy_hash`, and confirm the proof was generated against the specific policy version the firm claims was active. The policy contents remain private.
 
 New accounts get 500 credits ($5 USDC on Base). Top-ups are $5 for 500 credits.
 
@@ -329,10 +330,8 @@ New accounts get 500 credits ($5 USDC on Base). Top-ups are $5 for 500 credits.
       |<------------------------------|                         |
       |                                                         |
       |  GET /api/weather/verified                              |
-      |  Headers:                                               |
-      |    Payment-Signature: <EIP-3009>                        |
-      |    X-Preflight-Proof: {"proof_id":"abc-123",            |
-      |                        "claimed_result":"SAT"}          |
+      |  Standard x402 payment authorization +                  |
+      |  proof_id sidecar (this repo: X-Preflight-Proof header) |
       |-------------------------------------------------------->|
       |                                                         |
       |                               |  POST /v1/verifyProof   |
@@ -346,7 +345,17 @@ New accounts get 500 credits ($5 USDC on Base). Top-ups are $5 for 500 credits.
       |<--------------------------------------------------------|
 ```
 
-**Two headers, one request.** `Payment-Signature` authenticates the payment (Nanopayments). `X-Preflight-Proof` authorizes it (Preflight). The seller verifies the proof before accepting the Nanopayment.
+**Two independent checks.** The x402 payment authorization authenticates the buyer (the EIP-3009 signature is valid). The Preflight proof authorizes the intent (the action satisfied the compiled policy). The seller verifies both.
+
+### Proof transport (three options)
+
+The Preflight `proof_id` is conveyed at the application layer. The proof itself is not transported by x402. Pick one:
+
+1. **Request body field.** Simplest. The buyer adds `proof_id` to the request body; the seller's middleware reads it. Recommended for new integrations.
+2. **Non-x402 HTTP header** (this repo's default: `X-Preflight-Proof`). Works at the HTTP layer. **Not part of the x402 protocol** — the x402 v2 transport spec defines three named headers (`PAYMENT-REQUIRED`, `PAYMENT-SIGNATURE`, `PAYMENT-RESPONSE`) and is silent on additional headers, so this is non-standard but not forbidden.
+3. **x402 v2 `PaymentPayload.extensions` field.** The field exists in the x402 v2 schema and there is an `@x402/extensions` npm package, but the field's semantics are not yet standardized across schemes. Pin to your scheme's convention if you use this path. Best forward-looking target once the field's semantics solidify.
+
+This repo uses option 2 (sidecar header) because it requires no schema changes on the buyer or seller and works with any x402 client today. Switching to option 1 or 3 is a one-line change in `src/seller/proof-guard.ts` and `src/gateway/verified-client.ts`.
 
 **Inline attestation receipt.** After settlement, the seller's `attestAfterPay()` middleware writes `attest(keccak256(proofId), policyHash, paymentTxHash, SAT)` to the on-chain registry and echoes the attestation tx hash, contract address, block number, and Arc Explorer URL back to the buyer in the `_verification.attestation` field of the response body. The demo dashboard prints this block under each verified payment so the proof → payment → on-chain receipt chain is visible end-to-end.
 
@@ -493,7 +502,7 @@ ATTESTATION_CONTRACT_ADDRESS=0x76ce30319c561beaa6dcf936017fcbb1e84b18b1
 
 | Command | What it runs |
 |---|---|
-| `npm run demo` | Verified demo (6 scenes, no OpenAI needed) |
+| `npm run demo` | Verified demo (7 scenes, no OpenAI needed) |
 | `npm run demo:verified` | Same as above |
 | `npm run demo:legacy` | Original LangChain agent demo (3 acts, needs OpenAI) |
 | `npm run seller` | Start the seller server |
@@ -521,7 +530,7 @@ src/
 │   ├── index.ts             # LangChain agent (legacy demo only)
 │   └── tools.ts             # Agent tools routed through PreflightGate
 ├── demo/
-│   ├── verified-demo.ts     # 6-scene verified demo orchestrator
+│   ├── verified-demo.ts     # 7-scene verified demo orchestrator
 │   ├── verified-dashboard.ts # Terminal UI for verified demo
 │   ├── run.ts               # Legacy 3-act demo orchestrator
 │   ├── attacks.ts           # Prompt injection scenarios
@@ -566,7 +575,7 @@ app.get("/api/weather/verified",
 
 ### No SDK changes required
 
-**Buyer side:** `GatewayClient.pay(url, { headers })` already supports custom headers. The proof ID is injected into `X-Preflight-Proof` alongside `Payment-Signature`. This is a documented extension point.
+**Buyer side:** `GatewayClient.pay(url, { headers })` accepts custom headers. This repo injects the proof identifier into a non-x402 sidecar header `X-Preflight-Proof`; you can equivalently put `proof_id` in the request body or in the x402 v2 `PaymentPayload.extensions` field (see [Proof transport](#proof-transport-three-options) for the trade-offs).
 
 **Seller side:** Express middleware runs before `gateway.require()`. No Circle SDK modification needed. The proof is verified via ICME's public endpoint — no API key, no account required.
 
@@ -579,13 +588,13 @@ Every competitor offers spending *controls* (if-statements). Preflight offers sp
 | **Mechanism** | Check rules before paying | Mathematically prove all constraints satisfied |
 | **Verifiability** | Trust the middleware ran | Anyone can verify the proof independently |
 | **Privacy** | Auditor sees the policy | Auditor verifies without seeing the policy |
-| **Auditability** | Log files | Cryptographic receipts (EU AI Act ready) |
+| **Auditability** | Log files | Cryptographic receipts aligned with EU AI Act Article 12 logging |
 
 ## Why Arc
 
 Arc is the deliberate choice for the settlement leg of this stack, not a default. Four Arc properties this demo depends on:
 
-- **Deterministic settlement.** Arc's stablecoin-native consensus gives every Nanopayment a known finality window. `GatewayClient.pay` returns once settlement is final — no probabilistic-confirmation polling, no reorg hedge. Scenes 1, 2, and 5 land in **800–1500 ms p50** from signature to settled state (see "Measured performance" below).
+- **Deterministic settlement.** Arc's stablecoin-native consensus gives every Nanopayment a known finality window. `GatewayClient.pay` returns once settlement is final — no probabilistic-confirmation polling, no reorg hedge. Scenes 1, 2, and 5 land in **sub-second** time from signature to settled state (see "Measured performance" below).
 - **Predictable, sub-cent fees.** USDC is the native gas asset on Arc; transfer cost is bounded and stable *in stablecoin terms*. That is what makes per-API-call nanopayments economically defensible — `$0.001` for the call, fee well under `$0.001`. The same math on Ethereum mainnet or a general-purpose L2 inverts immediately on any spike.
 - **Agent-native throughput.** EIP-3009 `transferWithAuthorization` batched by Circle Gateway means an agent pre-funds once and draws down without a per-call onchain settlement round trip. Capital sits in the Gateway, not in N idle hot wallets.
 - **Public attestation surface.** Arc isn't only where USDC moves — it's where the binding between the off-chain ZK proof and the on-chain payment becomes a permanent record. After every verified payment the seller calls `NanopaymentAttestation.attest(proofId, policyHash, paymentTxHash, SAT)` (see [`contracts/NanopaymentAttestation.sol`](contracts/NanopaymentAttestation.sol), [`src/attestation/arc-attestor.ts`](src/attestation/arc-attestor.ts), [`src/seller/attest-after-pay.ts`](src/seller/attest-after-pay.ts)). The record stores hashes only — no policy bodies, no PII — so anyone with the `proofId` can verify "this proof authorized this Nanopayment by this seller" via Arc Explorer with no ICME access. Deployed live on Arc Testnet at [`0x76ce30319c561beaa6dcf936017fcbb1e84b18b1`](https://testnet.arcscan.app/address/0x76ce30319c561beaa6dcf936017fcbb1e84b18b1) — every verified payment in scene 2 writes a real on-chain attestation, browseable in Arc Explorer.
@@ -595,32 +604,33 @@ Arc is the deliberate choice for the settlement leg of this stack, not a default
 Two compounding effects at agent scale:
 
 1. **Pre-funded Gateway, single pool.** Instead of one funded EOA per agent or per service, an operator pre-funds one Gateway balance. The wallet bar in the demo shows the Gateway-side `available` balance separately from the on-chain wallet balance — that split is the capital-efficiency lever Circle's design already gives you, and Preflight just preserves it.
-2. **Zero-waste blocked path.** Scenes 2, 3a, 3b, 3c, and 4 prove that UNSAT actions never produce an EIP-3009 signature, so they never burn settlement throughput or hit a revert. On a "check at signing" stack, every blocked attempt either consumes a settlement slot or gets caught mid-batch. Preflight + Arc moves that cost to zero — UNSAT exits in ~5 s with no signature, no settlement, no waste.
+2. **Zero-waste blocked path.** Scenes 2, 3a, 3b, 3c, and 4 prove that UNSAT actions never produce an EIP-3009 signature, so they never burn settlement throughput or hit a revert. On a "check at signing" stack, every blocked attempt either consumes a settlement slot or gets caught mid-batch. Preflight + Arc moves that cost to zero — UNSAT exits in a few seconds with no signature, no settlement, no waste.
 
 These properties — deterministic settlement, predictable fees, agent-native throughput, and a public attestation surface — are what make the proof-gated path documented in this repo work, economically and architecturally. On a chain without them, per-API-call nanopayments break, and the off-chain proof cannot anchor itself to anything anyone else can audit.
 
 ## Measured performance (Arc Testnet, demo runs)
 
-Numbers from `verified-demo.ts` instrumentation. Each scene logs `preflightMs` and `paymentMs` from `src/gateway/verified-pay.ts`.
+Latency bands from `verified-demo.ts` instrumentation. Numbers vary with policy complexity, action text length, and network conditions. Each scene logs `preflightMs` and `paymentMs` from `src/gateway/verified-pay.ts`.
 
-| Stage | Latency | Notes |
+| Stage | Typical latency | Notes |
 |---|---|---|
-| `checkIt` (Z3 + AR dual solver) | 4–8 s | Returns SAT/UNSAT immediately; proof generates async. |
-| ZK proof generation (JOLT-Atlas) | 30–60 s | One-time per check. Amortizable across a session. |
-| `verifyProof` (seller-side, public) | 200–500 ms | No API key; pure verification. |
-| `GatewayClient.pay` (Arc Testnet) | 800–1500 ms | EIP-3009 signature + gateway settlement. |
-| **End-to-end happy path** | ~35–65 s | Dominated by proof generation. |
-| **Blocked path (UNSAT)** | ~5 s | No signature, no settlement, no proof wait. |
+| `checkIt` (LLM extractor + SMT solver + consensus) | a few seconds | Returns SAT/UNSAT immediately; ZK proof generation runs asynchronously. |
+| ZK proof generation (JOLT-Atlas) | tens of seconds | One-time per check. Off the critical path. Amortizable across a session. |
+| `verifyProof` (seller-side, public) | sub-second | No API key; pure verification. |
+| `GatewayClient.pay` (Arc Testnet) | sub-second | EIP-3009 signature + gateway settlement. |
+| Blocked path (UNSAT) | a few seconds | No signature, no settlement, no proof wait. |
+
+The ZK proof generation step uses [JOLT-Atlas](https://github.com/ICME-Lab/jolt-atlas), an active research project from ICME Labs that extends the JOLT zkVM ([Arun, Setty, Thaler — a16z Crypto Research](https://eprint.iacr.org/2023/1217)) to zero-knowledge machine learning ([arXiv:2602.17452](https://arxiv.org/abs/2602.17452)). JOLT-Atlas should be treated as research-grade software at this stage. The policy decision returned by `checkIt` does not block on proof generation.
 
 ## Compliance & auditability
 
 Preflight produces a cryptographic receipt for every agent payment decision. This matters for three live regulatory regimes:
 
-- **EU AI Act (Aug 2026 GPAI obligations).** Article 50/53-style transparency and record-keeping for high-risk AI systems. Every Preflight proof binds an action description to a `policy_hash`, satisfying "decision provenance" requirements without exposing internal policy logic.
-- **MiCA / payment-services rules in the EU.** Authorization trails for automated transfers. A proof_id is a portable, single-use audit token that a payment processor or supervisor can verify without buyer cooperation.
+- **EU AI Act (Article 12 logging, Article 50 transparency).** The EU AI Act requires automatic recording of events relevant to risk identification and substantial modification, and transparency about AI system operation. Every Preflight proof binds an action description to a `policy_hash`, producing a content-addressed cryptographic record aligned with the logging obligation. The compiled policy contents remain private to the firm; only the hash is published, satisfying decision-provenance use cases without exposing internal policy logic. Alignment with the logging obligation is one component of compliance, not a substitute for the broader conformity-assessment, oversight, and quality-management obligations the Act imposes.
+- **MiCA / payment-services rules in the EU.** Authorization trails for automated transfers. A `proof_id` is a portable, single-use audit token that a payment processor or supervisor can verify without buyer cooperation.
 - **US treasury / SOX-style internal controls.** Agents acting on a corporate treasury can produce per-payment proofs binding each transfer to a board-approved spending policy.
 
-Today most "agent guardrails" are log lines in a private system. Preflight upgrades that to a signed, verifiable, single-use receipt.
+Today most "agent guardrails" are log lines in a private system. Preflight upgrades that to a signed, verifiable, single-use receipt anchored to a permanent on-chain record.
 
 ## Costs
 
